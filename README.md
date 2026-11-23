@@ -1,81 +1,426 @@
 # Gigi
 
-Gigi is a desktop app for browsing, streaming and downloading movies, TV series and anime. It is built with Electron, React and SQLite, with a local library, playlists, downloads, watch history and a built-in player.
+### A fast, private desktop app for movies, TV series and anime.
 
-Gigi is a rebranded distribution based on [Streambert](https://github.com/truelockmc/streambert) by truelockmc, and remains licensed under the GNU GPL v3.0.
+Gigi brings discovery, streaming, downloads, subtitles and a personal library into one focused desktop experience. It is built with Electron, React and SQLite — no account, no ads and no central tracking service.
+
+[![Version](https://img.shields.io/badge/version-2.8.0-e50914?style=flat-square)](#whats-new)
+[![License](https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square)](LICENSE)
+[![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-555?style=flat-square)](#installation)
+[![Electron](https://img.shields.io/badge/Electron-45-47848F?style=flat-square&logo=electron&logoColor=white)](https://www.electronjs.org/)
+[![React](https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=111)](https://react.dev/)
+
+[Overview](#overview) · [Features](#features) · [Installation](#installation) · [First launch](#first-launch) · [How to use Gigi](#how-to-use-gigi) · [Troubleshooting](#troubleshooting) · [Development](#development-and-packaging) · [Credits](#credits-and-license)
+
+---
+
+## Overview
+
+Gigi is a desktop media browser for people who want their watchlist, downloads and viewing progress in one place. Browse trending and recommended titles, open a movie or series, pick a source, and keep watching from the same library on the next launch.
+
+The interface is dark by default, keyboard- and controller-friendly, and designed to stay out of the way while you browse.
+
+![Gigi home screen](screenshots/gigi-home.png)
+
+## What's new
+
+**Gigi 2.8.0** is the first release under the Gigi name. It includes the latest performance pass:
+
+- Home feeds and recommendations are cached locally to avoid repeated TMDB requests.
+- Age-rating lookups are deduplicated and run in small parallel batches.
+- Library facets (years, genres, tags and collections) are calculated in a single pass.
+- Home and Library are memoized to avoid renders caused by unrelated app state.
+- The app keeps the existing Streambert data directory and local database names, so an update does not wipe your library.
 
 ## Features
 
-- Stream movies, TV series and anime from third-party sources.
-- Download streams and manage the download queue.
-- Keep a local library with watch history, progress, ratings and playlists.
-- Discover trending titles and personalized recommendations.
-- Search with a command palette and smart library filters.
-- Download and manage subtitles.
-- Customize themes, accents, home layout and playback settings.
-- Ad and tracker blocking built into the player.
+| Area | What you get |
+| --- | --- |
+| **Discovery** | Trending movies and series, top-rated titles, recently added items and recommendations based on your library. |
+| **Streaming** | Embedded player with multiple sources, source switching, HLS playback, trailers, fullscreen and external player support. |
+| **Downloads** | Download streams, follow queue progress, scan local folders and keep downloaded subtitles together with the video. |
+| **Library** | Save titles, track watch status and progress, filter by type, status, genre, tag, collection or year, and create reusable views. |
+| **Playlists** | Build a playlist around a mood, time of day, genre or loose idea; save it and return to it later. |
+| **Anime** | AniList metadata, AllManga sources, AniSkip intro skipping and the same library/download workflow as films and series. |
+| **Subtitles** | Subtitle search and download, preferred language, automatic subtitle download and optional Wyzie Subs integration. |
+| **Personalization** | Dark, AMOLED, Mocha, Slate and Light themes, six accent colours, font sizing, compact grids and reduced animations. |
+| **Privacy** | Ad and tracker blocking in the player, local-first data, no account required and no central analytics service. |
+| **Desktop extras** | Discord Rich Presence, desktop notifications, gamepad navigation, keyboard shortcuts and scheduled backups. |
+
+### A closer look
+
+<p align="center">
+  <img src="screenshots/gigi-playlists.png" alt="Gigi playlist builder" width="48%">
+  <img src="screenshots/gigi-appearance.png" alt="Gigi appearance settings" width="48%">
+</p>
 
 ## Requirements
 
-- [Node.js](https://nodejs.org/) 22.12.0 or newer when building from source.
-- A free TMDB API Read Access Token. Follow the [TMDB guide](tmdb-tutorial.md).
-- For downloads: `ffmpeg` and [vid-dl-cli-only](https://github.com/truelockmc/vid-dl-cli-only/releases/latest).
+### For the prebuilt app
 
-## Getting started
+- Windows 10/11 (x64), macOS or a modern x64 Linux distribution.
+- A free **TMDB API Read Access Token** for metadata, artwork and discovery.
+- Internet access for metadata and streaming sources.
+- Optional for downloads: `ffmpeg` and [vid-dl-cli-only](https://github.com/truelockmc/vid-dl-cli-only/releases/latest).
 
-On first launch, paste your TMDB Read Access Token into the setup screen. It is stored locally and is only needed once.
+### For building from source
+
+- [Node.js](https://nodejs.org/) **22.12.0 or newer**.
+- npm (included with Node.js).
+- The platform build tools required by Electron. On Linux, a working desktop environment and the usual GTK libraries are recommended.
+
+## Installation
 
 ### Windows
 
-Download `Gigi Setup *.exe` from the [releases page](https://github.com/necu/Gigi/releases/latest).
+A Windows installer can be generated with `npm run dist:win` and is written to `dist/Gigi Setup 2.8.0.exe`. When an installer is attached to a [GitHub Release](https://github.com/necu/Gigi/releases), download it there, run it and choose an installation folder, then launch **Gigi** from the Start menu.
+
+The installer is not code-signed, so Windows SmartScreen may show a warning. Choose **More info → Run anyway** only if you trust the build and its source.
 
 ### Linux
 
-Build or download the `.deb`, `.rpm`, `.pacman` or `.AppImage` package from the [releases page](https://github.com/necu/Gigi/releases/latest).
+Build a package for your distribution from source, then install it with the matching package manager.
 
 ```bash
+npm ci
+npm run dist:linux
+
 # Debian / Ubuntu
-sudo dpkg -i gigi_*.deb
+sudo dpkg -i dist/gigi_*.deb
+
+# Fedora / RPM-based distributions
+sudo rpm -i dist/gigi-*.rpm
 
 # Arch Linux
-sudo pacman -U gigi-*.pacman
+sudo pacman -U dist/gigi-*.pacman
 
 # AppImage
-chmod +x Gigi-x64.AppImage && ./Gigi-x64.AppImage
+chmod +x dist/Gigi-*.AppImage
+./dist/Gigi-*.AppImage
 ```
+
+If a package reports missing shared libraries, install the distribution's GTK/Electron runtime dependencies and try again.
 
 ### macOS
 
-Download the latest `.dmg` from the [releases page](https://github.com/necu/Gigi/releases/latest), open it and drag Gigi into Applications.
-
-## Building from source
+Build the unsigned universal disk image from source:
 
 ```bash
-npm install
-npm run dist:win      # Windows installer
-npm run dist:linux    # Linux packages
-npm run dist:mac      # macOS package
+npm ci
+npm run dist:mac
+open dist/Gigi-*.dmg
 ```
 
-For development, use `npm start` to build the renderer and launch Electron.
+Drag **Gigi** into **Applications**. On first launch, macOS may block the unsigned app: open **System Settings → Privacy & Security**, click **Open Anyway**, and confirm.
 
-## Data compatibility
+### Build from source
 
-Gigi keeps the existing `streambert_` local-storage namespace, SQLite database names and application data directory. Updating from Streambert therefore preserves the library, playlists, settings, downloads and watch history.
+Use this if you want the newest code, a custom build, or a package for another architecture.
+
+```bash
+git clone https://github.com/necu/Gigi.git
+cd Gigi
+npm ci
+npm start
+```
+
+`npm start` builds the renderer and launches Electron. To produce installers:
+
+```bash
+npm run dist:win      # Windows NSIS installer
+npm run dist:linux    # .deb, .rpm, .pacman and AppImage
+npm run dist:mac      # unsigned universal .dmg
+```
+
+Build outputs are written to `dist/`.
+
+## First launch
+
+1. Create a free [TMDB](https://www.themoviedb.org/) account if you do not have one.
+2. Open [TMDB API settings](https://www.themoviedb.org/settings/api) and request a **Personal use** API key.
+3. Copy the **API Read Access Token** — the long value starting with `eyJ`, not the shorter API Key.
+4. Paste it into Gigi's setup screen and press **Let's go**.
+
+The token is stored locally using Electron's secure storage where available. It is only used to request metadata from TMDB. A full walkthrough is available in [tmdb-tutorial.md](tmdb-tutorial.md).
+
+You can skip setup and add the token later from **Settings → General → TMDB Read Access Token**.
+
+## How to use Gigi
+
+### Home
+
+Home is the starting point for browsing. It can show:
+
+- **Continue Watching** — titles with saved playback progress.
+- **Recently Added** — fresh additions to your library.
+- **Recommended for You** — picks based on your saved titles and viewing history.
+- **Trending Movies** and **Trending Series** — currently popular titles.
+- **Top Rated** — highly rated films and series.
+
+Use the row arrows to browse horizontally. You can reorder or hide rows in **Settings → Home Page Layout**, and choose a different start page in **Settings → Start Page**.
+
+### Search and command palette
+
+- Press `Ctrl+F` to open search.
+- Press `Ctrl+Shift+P` to open the command palette.
+- Press `Ctrl+K` to focus search on the current page.
+- Press `Esc` to close a modal or search.
+- Press `?` to open the full shortcut reference.
+
+Search results can be opened directly, and the command palette is the quickest way to jump around the app.
+
+### Movies and series
+
+Open any poster to see its details, cast, related titles, seasons and episodes. From a title page you can:
+
+- Play a source in the embedded player.
+- Switch between available sources.
+- Watch the trailer.
+- Save the title to your library or a playlist.
+- Start a download.
+- Open subtitles, related titles and cast pages.
+- Mark progress, episodes and watched status.
+
+The player supports fullscreen, volume and seeking controls. When a source fails, try another source before assuming the title is unavailable.
+
+### Library and watch history
+
+**Library & History** is your personal collection:
+
+- **Saved** titles you want to watch.
+- **Planned**, **Watching** and **Completed** status filters.
+- **Continue Watching** progress rows.
+- **Watch History** with the ability to remove individual entries.
+- Filters for movies, series and anime, plus genres, tags, collections and release years.
+- Saved custom views for filters you use often.
+- **Organize** tools for genres, directors, decades, franchises and saga order.
+- Bulk selection for moving, tagging and removing multiple titles.
+
+Library data is stored in SQLite when the desktop database is available, with local storage as a fallback.
+
+### Playlists
+
+Playlists are built around a moment rather than a folder hierarchy. Choose a time of day, a genre and optional mood terms, then let Gigi suggest films for that playlist. Save the definition and return to it whenever you want the same kind of evening.
+
+The playlist builder is useful for things like:
+
+- *Morning · light picks*
+- *Late night · slow-burn space horror*
+- *Weekend · practical-effects action*
+- *Cozy mystery · one location*
+
+### Downloads
+
+Open a movie or episode and choose **Download** to add it to the download queue. Downloading requires:
+
+- `ffmpeg` available to Gigi.
+- [vid-dl-cli-only](https://github.com/truelockmc/vid-dl-cli-only/releases/latest) installed and configured.
+
+In **Downloads** you can:
+
+- See active and completed downloads.
+- Sort and filter the queue.
+- Set a download folder in **Settings → Downloads**.
+- Scan a local folder for existing video files.
+- Manage downloaded subtitles and playback progress.
+- Open an error log when a download fails.
+
+Available download quality and speed depend on the source and your connection.
+
+### Anime
+
+Anime titles are detected automatically. Gigi uses AniList metadata for anime and can use AniSkip to skip openings when timestamps are available. The same library, history and download tools apply to anime.
+
+### Subtitles
+
+Configure subtitle downloads in **Settings → Subtitles**:
+
+- Choose a preferred language.
+- Enable automatic subtitle downloads with videos.
+- Use the default subtitle source or add a **Wyzie Subs** API key for more options.
+- Manage downloaded subtitle files alongside the video.
+
+### Appearance and accessibility
+
+Open **Settings → Appearance** to change:
+
+- Theme: Dark, AMOLED, Mocha, Slate, Light or a custom palette.
+- Accent colour.
+- Font size.
+- Compact card grid.
+- Reduced animations.
+- Controller support.
+
+The app is designed to work with a keyboard and a gamepad. See the shortcut and controller reference in-app with `?`.
+
+### Backups and data
+
+Use **Settings → Backup & Restore** to export a JSON backup containing your settings, library and playlists. Keep backups somewhere safe before resetting the app or moving to another computer.
+
+You can also configure a backup folder and retention count. The app keeps the legacy `streambert_` local-storage namespace and `streambert.db` database name so existing data continues to work after the Gigi rename.
+
+Typical user-data locations:
+
+| Platform | Folder |
+| --- | --- |
+| Windows | `%APPDATA%\streambert` |
+| macOS | `~/Library/Application Support/streambert` |
+| Linux | `~/.config/streambert` |
+
+Downloaded videos live in the folder configured in Settings, not in the user-data folder.
+
+### Notifications and Discord
+
+- **Desktop notifications** can alert you when downloads complete or new episodes are detected.
+- **Discord Rich Presence** can show the title you are watching and a button linking to the project. Both features are optional and can be disabled in Settings.
+
+## Keyboard shortcuts
+
+| Shortcut | Action |
+| --- | --- |
+| `Ctrl+F` | Open global search |
+| `Ctrl+Shift+P` | Open command palette |
+| `Ctrl+K` | Search on the current page |
+| `Esc` | Close search or modal |
+| `Ctrl+Z` | Navigate back |
+| `Ctrl+R` | Reload the app |
+| `?` | Show keyboard shortcuts |
+
+### Controller
+
+| Control | Action |
+| --- | --- |
+| D-pad | Navigate menus |
+| A | Select / confirm |
+| B | Back / close |
+| Start | Open search |
+| A / D-pad / LB / RB | Player: play-pause, seek, volume, skip ±15 seconds |
+
+## Troubleshooting
+
+### TMDB says the token is invalid
+
+Use the **API Read Access Token** (the long JWT beginning with `eyJ`), not the shorter API Key. You can replace it at **Settings → General → TMDB Read Access Token**. A `401` response almost always means the wrong token type or a revoked token.
+
+### A title has no working sources
+
+Sources can be unavailable temporarily. Try another source, another title or a different region. If the title is age-restricted, check **Settings → Age Rating**. Ad blocking or a provider outage can also affect a specific source.
+
+### Downloads fail
+
+- Confirm `ffmpeg` is installed and available in `PATH`.
+- Confirm [vid-dl-cli-only](https://github.com/truelockmc/vid-dl-cli-only/releases/latest) is installed.
+- Check that the download folder exists and is writable.
+- Open the error log from the Downloads page for the provider's message.
+- Stream URLs can expire; retry from the title page instead of reusing an old URL.
+
+### Subtitles are missing
+
+Check the preferred language and subtitle source in Settings. Some titles do not have subtitles in every language. If you use Wyzie Subs, verify that your API key is still valid.
+
+### The app does not update
+
+Update checks use GitHub Releases. The repository must have a published release that the app can read. If you are running a private build, update the app from the same source you installed it from.
+
+### Linux AppImage will not start
+
+Make the file executable:
+
+```bash
+chmod +x Gigi-*.AppImage
+./Gigi-*.AppImage
+```
+
+For `.deb`, `.rpm` or `.pacman` packages, install through your distribution's package manager so dependencies are resolved.
+
+### macOS blocks the app
+
+The build is unsigned. Open **System Settings → Privacy & Security**, choose **Open Anyway** for Gigi, and confirm. Only do this for a build you trust.
+
+### Windows SmartScreen warns about the installer
+
+The installer is not code-signed. Use **More info → Run anyway** only after verifying that you downloaded the installer from this repository's Releases page.
+
+### I need to start over
+
+**Settings → Danger Zone** can clear caches, watch progress or downloads separately. A full reset removes settings, library, history and cached data; downloaded video files are handled separately by the download cleanup action.
+
+## Privacy and security
+
+- Gigi does not require an account and does not operate a centralized analytics service.
+- Settings, library, history and playlists are stored locally.
+- The TMDB token is stored locally; do not share your user-data folder or backups containing private data.
+- Streaming and metadata providers are third parties and have their own privacy policies.
+- The player includes ad and tracker blocking, but no blocker is perfect.
+- Never commit API keys, tokens or personal backups to this repository.
+
+## Development and packaging
+
+```bash
+git clone https://github.com/necu/Gigi.git
+cd Gigi
+npm ci
+
+# Development build + Electron
+npm start
+
+# Production renderer only
+npx vite build
+
+# Installers
+npm run dist:win
+npm run dist:linux
+npm run dist:mac
+```
+
+Useful scripts from `package.json`:
+
+| Script | Purpose |
+| --- | --- |
+| `npm start` | Build the renderer and launch Electron |
+| `npm run dev` | Watch the renderer with Vite |
+| `npm run dist:win` | Windows NSIS installer |
+| `npm run dist:linux` | Linux `.deb`, `.rpm`, `.pacman` and AppImage |
+| `npm run dist:mac` | macOS universal `.dmg` |
+| `npm run dist` | Build all configured platforms |
+
+## Project structure
+
+```text
+Gigi/
+├── index.js                 Electron main process
+├── preload.js               Secure renderer bridge
+├── src/
+│   ├── App.jsx              Application shell and navigation
+│   ├── components/          UI components and modals
+│   ├── ipc/                 Main-process integrations
+│   ├── pages/               Home, Library, Playlists, Downloads, Settings
+│   ├── styles/              Theme and layout styles
+│   └── utils/               API, storage, library and player helpers
+├── public/                  Icons and installer assets
+├── screenshots/             Documentation images
+└── package.json             Scripts and Electron Builder configuration
+```
 
 ## Credits and license
 
-Gigi is based on Streambert, originally created by [truelockmc](https://github.com/truelockmc). The original project and this distribution are free software under the [GNU General Public License v3.0](LICENSE). Modified versions must remain open source under the same license.
+Gigi is a rebranded distribution based on [Streambert](https://github.com/truelockmc/streambert), originally created by [truelockmc](https://github.com/truelockmc). Thank you to the original project and its contributors.
 
-## Privacy disclaimer
-
-Gigi does not operate a centralized service and does not intentionally collect analytics. Third-party metadata, stream and download providers may still collect data according to their own policies.
+Gigi is free software licensed under the [GNU General Public License v3.0](LICENSE). Modified versions must remain open source under the same license.
 
 ## Legal disclaimer
 
-This application is provided for educational and personal use only.
+**This application is for educational and personal use only.**
 
 - Gigi does not host, store or distribute copyrighted content.
-- Content is sourced from third-party providers.
-- Users are responsible for complying with the laws in their jurisdiction and for having the rights to access any content.
+- All content is sourced from third-party providers and websites.
+- Users are solely responsible for ensuring they have the legal right to access any content.
 - The developers do not endorse or encourage copyright infringement.
+- Users must comply with the laws of their jurisdiction.
+- Legal issues should be directed to the actual content providers.
+
+---
+
+<p align="center">
+  <sub>Built with Electron, React, Vite and SQLite.</sub>
+</p>
