@@ -4,6 +4,14 @@
 
 Gigi brings discovery, streaming, downloads, subtitles and a personal library into one focused desktop experience. It is built with Electron, React and SQLite — no Gigi account, no ads and no central tracking service.
 
+<p align="center">
+  <a href="https://github.com/necu/Gigi/releases/latest/download/Gigi-Setup-2.8.0.exe">
+    <img src="https://img.shields.io/badge/Download_for_Windows-Gigi_2.8.0-e50914?style=for-the-badge&logo=windows&logoColor=white" alt="Download Gigi for Windows">
+  </a>
+  <br>
+  <sub>Windows 10/11 · x64 · direct installer</sub>
+</p>
+
 [![Version](https://img.shields.io/badge/version-2.8.0-e50914?style=flat-square)](#whats-new)
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square)](LICENSE)
 [![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-555?style=flat-square)](#installation)
@@ -73,7 +81,13 @@ The interface is dark by default, keyboard- and controller-friendly, and designe
 
 ### Windows
 
-A Windows installer can be generated with `npm run dist:win` and is written to `dist/Gigi Setup 2.8.0.exe`. When an installer is attached to a [GitHub Release](https://github.com/necu/Gigi/releases), download it there, run it and choose an installation folder, then launch **Gigi** from the Start menu.
+<p align="center">
+  <a href="https://github.com/necu/Gigi/releases/latest/download/Gigi-Setup-2.8.0.exe">
+    <img src="https://img.shields.io/badge/Download_for_Windows-Gigi_2.8.0-e50914?style=for-the-badge&logo=windows&logoColor=white" alt="Download Gigi for Windows">
+  </a>
+</p>
+
+Download the installer directly with the button above, run it and choose an installation folder, then launch **Gigi** from the Start menu. The installer is also generated locally by `npm run dist:win` as `dist/Gigi Setup 2.8.0.exe`.
 
 The installer is not code-signed, so Windows SmartScreen may show a warning. Choose **More info → Run anyway** only if you trust the build and its source.
 
