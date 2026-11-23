@@ -9,6 +9,7 @@ import { storage, getApiKey } from "./storage";
 
 const CACHE_KEY = "ratingsCache";
 const CACHE_TTL = 1000 * 60 * 60 * 24 * 7; // 7 days
+const BATCH_SIZE = 4;
 
 // Read the whole cache once and return it, caller holds reference
 function readCache() {
@@ -28,18 +29,21 @@ function writeCache(cache) {
 // Evict entries older than TTL and return the cleaned cache
 function evictStale(cache) {
   const now = Date.now();
-  let changed = false;
   for (const key of Object.keys(cache)) {
     if (now - cache[key].ts > CACHE_TTL) {
       delete cache[key];
-      changed = true;
     }
   }
-  return cache; // mutated in-place; caller uses return value as signal via changed flag
+  return cache;
 }
 
 /**
  * Hook that fetches + caches age ratings for an array of items.
+ *
+ * Items are deduplicated before requesting, and requests run in small batches
+ * (TMDB already caps concurrency at 4). This avoids fetching the same title
+ * several times when it appears in multiple Home rows, and avoids the old
+ * one-request-at-a-time loop that made large rows feel slow.
  */
 export function useRatings(items) {
   const [ratingsMap, setRatingsMap] = useState({});
@@ -49,13 +53,28 @@ export function useRatings(items) {
   const [ratingCountry] = useState(() => getRatingCountry(storage));
   const [apiKey] = useState(() => getApiKey());
 
-  const itemsKey = useMemo(() => {
-    if (!items?.length) return "";
-    return items
-      .map((i) => `${i.media_type === "tv" ? "tv" : "movie"}_${i.id}`)
-      .sort()
-      .join(",");
+  const uniqueItems = useMemo(() => {
+    const seen = new Set();
+    const unique = [];
+    for (const item of items || []) {
+      if (!item || item.id == null) continue;
+      const type = item.media_type === "tv" ? "tv" : "movie";
+      const key = `${type}_${item.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(item);
+    }
+    return unique;
   }, [items]);
+
+  const itemsKey = useMemo(
+    () =>
+      uniqueItems
+        .map((item) => `${item.media_type === "tv" ? "tv" : "movie"}_${item.id}`)
+        .sort()
+        .join(","),
+    [uniqueItems],
+  );
 
   useEffect(() => {
     if (!itemsKey || !apiKey) return;
@@ -67,7 +86,7 @@ export function useRatings(items) {
     // Seed from cache immediately (no flash)
     const initial = {};
     const missing = [];
-    for (const item of items) {
+    for (const item of uniqueItems) {
       const type = item.media_type === "tv" ? "tv" : "movie";
       const cacheKey = `${type}_${item.id}_${ratingCountry}`;
       const entry = cache[cacheKey];
@@ -90,29 +109,42 @@ export function useRatings(items) {
 
     let cancelled = false;
     (async () => {
-      for (let i = 0; i < missing.length; i++) {
+      for (let start = 0; start < missing.length && !cancelled; start += BATCH_SIZE) {
+        const batch = missing.slice(start, start + BATCH_SIZE);
+        const updates = {};
+
+        await Promise.all(
+          batch.map(async (item) => {
+            const type = item.media_type === "tv" ? "tv" : "movie";
+            const mapKey = `${type}_${item.id}`;
+            const cacheKey = `${type}_${item.id}_${ratingCountry}`;
+            try {
+              const result =
+                type === "tv"
+                  ? await fetchTVRating(item.id, apiKey, ratingCountry)
+                  : await fetchMovieRating(item.id, apiKey, ratingCountry);
+              if (cancelled) return;
+              cache[cacheKey] = {
+                cert: result.cert,
+                minAge: result.minAge,
+                ts: Date.now(),
+              };
+              cacheModified = true;
+              updates[mapKey] = result;
+            } catch {}
+          }),
+        );
+
         if (cancelled) break;
-        const item = missing[i];
-        const type = item.media_type === "tv" ? "tv" : "movie";
-        const mapKey = `${type}_${item.id}`;
-        const cacheKey = `${type}_${item.id}_${ratingCountry}`;
-        try {
-          const result =
-            type === "tv"
-              ? await fetchTVRating(item.id, apiKey, ratingCountry)
-              : await fetchMovieRating(item.id, apiKey, ratingCountry);
-          if (!cancelled) {
-            cache[cacheKey] = {
-              cert: result.cert,
-              minAge: result.minAge,
-              ts: Date.now(),
-            };
-            cacheModified = true;
-            setRatingsMap((prev) => ({ ...prev, [mapKey]: result }));
-          }
-        } catch {}
-        // Avoid "hammering" TMDB
-        if (i < missing.length - 1) await new Promise((r) => setTimeout(r, 80));
+        if (Object.keys(updates).length) {
+          setRatingsMap((prev) => ({ ...prev, ...updates }));
+        }
+
+        // Small gap between batches keeps us well below TMDB rate limits while
+        // still being several times faster than a serial loop.
+        if (start + BATCH_SIZE < missing.length) {
+          await new Promise((resolve) => setTimeout(resolve, 40));
+        }
       }
       // Write cache once at the end instead of after each item
       if (cacheModified && !cancelled) writeCache(cache);
@@ -121,6 +153,9 @@ export function useRatings(items) {
     return () => {
       cancelled = true;
     };
+    // itemsKey changes only when the unique type/id set changes, so metadata
+    // refreshes do not restart an in-progress ratings sync.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itemsKey, apiKey, ratingCountry]);
 
   return { ratingsMap, ageLimitSetting, ratingCountry };

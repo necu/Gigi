@@ -30,8 +30,13 @@ import {
   loadHomeViewMode,
   saveHomeViewMode,
 } from "../utils/homeLayout";
-import { collectBackupData, restoreBackupData } from "../utils/backup";
+import {
+  collectFullBackup,
+  restoreFullBackup,
+  validateBackup,
+} from "../utils/backup";
 import { formatBytes } from "../utils/storage";
+import { watchlistDb } from "../utils/watchlistDb";
 
 // ── Custom Select ─────────────────────────────────────────────────────────────
 function SettingsSelect({ value, onChange, options, style }) {
@@ -226,7 +231,7 @@ function ResetConfirmDialog({ onConfirm, onCancel }) {
             marginBottom: 10,
           }}
         >
-          RESET STREAMBERT?
+          RESET GIGI?
         </div>
         <div
           style={{
@@ -541,9 +546,10 @@ function VersionSection() {
   });
   const [autoSaved, setAutoSaved] = useState(false);
   const [currentVersion, setCurrentVersion] = useState("0.0.0");
-  const [updateSource, setUpdateSource] = useState(
-    () => storage.get(STORAGE_KEYS.UPDATE_SOURCE) || DEFAULT_UPDATE_SOURCE,
-  );
+  const [updateSource, setUpdateSource] = useState(() => {
+    const stored = storage.get(STORAGE_KEYS.UPDATE_SOURCE);
+    return UPDATE_SOURCES[stored] ? stored : DEFAULT_UPDATE_SOURCE;
+  });
 
   useEffect(() => {
     if (window.electron?.getAppVersion) {
@@ -1134,43 +1140,225 @@ function ScheduledBackupSection() {
 }
 
 // ── Backup & Restore ─────────────────────────────────────────────────────────
+function LibraryMaintenanceSection() {
+  const [stats, setStats] = useState(null);
+  const [playlistCount, setPlaylistCount] = useState(null);
+  const [status, setStatus] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const refresh = async () => {
+    const [nextStats, playlists] = await Promise.all([
+      watchlistDb.stats(),
+      watchlistDb.playlists(),
+    ]);
+    setStats(nextStats);
+    setPlaylistCount(Array.isArray(playlists) ? playlists.length : null);
+  };
+
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  const run = async (action) => {
+    setBusy(true);
+    setStatus(null);
+    try {
+      const result = await action();
+      if (!result?.ok) {
+        setStatus("✕ " + (result?.error || "The database is unavailable."));
+      }
+      await refresh();
+    } catch (error) {
+      setStatus("✕ " + (error?.message || "The operation failed."));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const checkIntegrity = () =>
+    run(async () => {
+      const result = await watchlistDb.integrity();
+      const healthy =
+        result?.ok &&
+        Array.isArray(result.result) &&
+        result.result.every((value) => value === "ok");
+      setStatus(
+        healthy
+          ? "✓ Library database is healthy."
+          : "✕ Integrity check reported an issue.",
+      );
+      return result;
+    });
+
+  const optimize = () =>
+    run(async () => {
+      const result = await watchlistDb.checkpoint();
+      if (result?.ok) setStatus("✓ Database optimized.");
+      return result;
+    });
+
+  const cleanUp = () =>
+    run(async () => {
+      const result = await watchlistDb.prune();
+      if (result?.ok) setStatus("✓ Unused tags and collections removed.");
+      return result;
+    });
+
+  const stat = (label, value) => (
+    <div
+      style={{
+        minWidth: 92,
+        padding: "10px 12px",
+        border: "1px solid var(--border)",
+        borderRadius: 8,
+        background: "var(--surface2)",
+      }}
+    >
+      <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text)" }}>
+        {value}
+      </div>
+      <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 2 }}>
+        {label}
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{ marginBottom: 40 }}>
+      <div className="settings-section-title">Library Database</div>
+      <div
+        style={{
+          fontSize: 13,
+          color: "var(--text3)",
+          marginBottom: 16,
+          lineHeight: 1.6,
+        }}
+      >
+        Check the SQLite library, compact its write-ahead log and remove unused
+        tags and collections. Backups include this database as well.
+      </div>
+
+      {stats?.available ? (
+        <>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+            {stat("Titles", stats.entries)}
+            {stat("Tags", stats.tags)}
+            {stat("Collections", stats.collections)}
+            {stat("Playlists", playlistCount ?? "—")}
+            {stat("On disk", formatBytes(stats.sizeBytes || 0))}
+          </div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <button
+              className="btn btn-primary"
+              onClick={checkIntegrity}
+              disabled={busy}
+            >
+              Check integrity
+            </button>
+            <button className="btn btn-ghost" onClick={optimize} disabled={busy}>
+              Optimize
+            </button>
+            <button className="btn btn-ghost" onClick={cleanUp} disabled={busy}>
+              Clean unused tags
+            </button>
+          </div>
+          {stats.path && (
+            <div
+              style={{
+                marginTop: 12,
+                fontSize: 11,
+                color: "var(--text3)",
+                wordBreak: "break-all",
+              }}
+            >
+              {stats.path}
+            </div>
+          )}
+        </>
+      ) : (
+        <div
+          style={{
+            padding: "12px 14px",
+            border: "1px solid var(--border)",
+            borderRadius: 8,
+            background: "var(--surface2)",
+            color: "var(--text3)",
+            fontSize: 13,
+          }}
+        >
+          The SQLite library is unavailable; Gigi is using its localStorage
+          fallback.
+        </div>
+      )}
+
+      {status && (
+        <div
+          style={{
+            marginTop: 12,
+            fontSize: 13,
+            color: status.startsWith("✕") ? "var(--red)" : "#48c774",
+          }}
+        >
+          {status}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function BackupRestoreSection({ onRestored }) {
   const [restoreStatus, setRestoreStatus] = useState(null);
+  const [busy, setBusy] = useState(false);
 
-  const handleExport = () => {
-    const backup = {
-      version: 1,
-      exportedAt: new Date().toISOString(),
-      data: collectBackupData(),
-    };
-    const blob = new Blob([JSON.stringify(backup, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `streambert-backup-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const handleExport = async () => {
+    setBusy(true);
+    try {
+      const backup = await collectFullBackup();
+      const blob = new Blob([JSON.stringify(backup, null, 2)], {
+        type: "application/json",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `gigi-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setRestoreStatus(
+        `✓ Exported settings, library and ${backup.playlists?.length || 0} playlist(s).`,
+      );
+      setTimeout(() => setRestoreStatus(null), 5000);
+    } catch (err) {
+      setRestoreStatus("✕ " + (err.message || "Could not export backup."));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const handleImport = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setBusy(true);
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       try {
-        const backup = JSON.parse(ev.target.result);
-        if (!backup?.data)
-          throw new Error("Invalid backup file, missing data field.");
-        restoreBackupData(backup.data);
-        setRestoreStatus("✓ Backup restored: reloading…");
-        setTimeout(() => window.location.reload(), 1200);
+        const backup = validateBackup(JSON.parse(ev.target.result));
+        const result = await restoreFullBackup(backup);
+        const suffix = result.warnings.length
+          ? ` (${result.warnings[0]})`
+          : "";
+        setRestoreStatus(`✓ Backup restored${suffix}: reloading…`);
+        setTimeout(() => window.location.reload(), 1400);
         onRestored?.();
       } catch (err) {
         setRestoreStatus("✕ " + (err.message || "Could not read backup file."));
-        setTimeout(() => setRestoreStatus(null), 4000);
+        setTimeout(() => setRestoreStatus(null), 5000);
+      } finally {
+        setBusy(false);
       }
+    };
+    reader.onerror = () => {
+      setRestoreStatus("✕ Could not read the selected file.");
+      setBusy(false);
     };
     reader.readAsText(file);
     // Reset input so same file can be re-selected
@@ -1188,9 +1376,9 @@ function BackupRestoreSection({ onRestored }) {
           lineHeight: 1.6,
         }}
       >
-        Export your watchlist, watch history, progress, and all settings to a
-        JSON file. Import it later to restore everything, useful before
-        reinstalling or switching devices.
+        Export your settings, watchlist, watch history, SQLite library and
+        playlists to a JSON file. Import it later to restore everything, useful
+        before reinstalling or switching devices. Older v1 backups still work.
       </div>
       <div
         style={{
@@ -1200,10 +1388,15 @@ function BackupRestoreSection({ onRestored }) {
           alignItems: "center",
         }}
       >
-        <button className="btn btn-primary" onClick={handleExport}>
-          ⬆ Export Backup
+        <button
+          className="btn btn-primary"
+          onClick={handleExport}
+          disabled={busy}
+        >
+          {busy ? "Working…" : "⬆ Export Backup"}
         </button>
         <label
+          aria-disabled={busy}
           style={{
             display: "inline-flex",
             alignItems: "center",
@@ -1215,7 +1408,8 @@ function BackupRestoreSection({ onRestored }) {
             fontSize: 14,
             fontWeight: 600,
             color: "var(--text)",
-            cursor: "pointer",
+            cursor: busy ? "wait" : "pointer",
+            opacity: busy ? 0.65 : 1,
             transition: "background 0.15s",
           }}
           onMouseEnter={(e) =>
@@ -1230,6 +1424,7 @@ function BackupRestoreSection({ onRestored }) {
             type="file"
             accept=".json,application/json"
             onChange={handleImport}
+            disabled={busy}
             style={{ display: "none" }}
           />
         </label>
@@ -1822,7 +2017,7 @@ function StartPageSection() {
           lineHeight: 1.6,
         }}
       >
-        Choose which page opens when you launch Streambert.
+        Choose which page opens when you launch Gigi.
       </div>
       <div
         style={{
@@ -2116,7 +2311,7 @@ function SubtitleSettingsSection() {
                 }}
                 onClick={() =>
                   window.electron?.openExternal(
-                    "https://codeberg.org/truelockmc/streambert/src/branch/main/wyzie-tutorial.md",
+                    "https://github.com/necu/Gigi/blob/main/wyzie-tutorial.md",
                   )
                 }
               >
@@ -2456,7 +2651,7 @@ function DiscordRpcSection() {
         />
         <ToggleRow
           label="Show cover art"
-          description="Uses the movie/show poster as the large image. When off, only the Streambert icon is shown."
+          description="Uses the movie/show poster as the large image. When off, only the Gigi icon is shown."
           value={showCover}
           onChange={setShowCover}
           disabled={!enabled}
@@ -2470,7 +2665,7 @@ function DiscordRpcSection() {
         />
         <ToggleRow
           label="Show GitHub button"
-          description="Adds a button linking to the Streambert GitHub repository."
+          description="Adds a button linking to the Gigi GitHub repository."
           value={showButton}
           onChange={setShowButton}
           disabled={!enabled}
@@ -3591,7 +3786,7 @@ export default function SettingsPage({
       {showDeleteDlConfirm && (
         <ConfirmDialog
           title="DELETE ALL DOWNLOADS?"
-          description="This will permanently delete all video files downloaded through Streambert and remove them from the download list."
+          description="This will permanently delete all video files downloaded through Gigi and remove them from the download list."
           confirmLabel="Yes, Delete All"
           onConfirm={async () => {
             setShowDeleteDlConfirm(false);
@@ -3633,7 +3828,7 @@ export default function SettingsPage({
           SETTINGS
         </div>
         <div style={{ color: "var(--text3)", fontSize: 14, marginBottom: 48 }}>
-          App configuration for Streambert
+          App configuration for Gigi
         </div>
 
         {/* ══════════════════════════════════════════════════════════════════ */}
@@ -4240,7 +4435,7 @@ export default function SettingsPage({
               }}
             >
               Downloaded videos will be saved here. Make sure the folder exists
-              and Streambert has write access to it.
+              and Gigi has write access to it.
             </div>
             <div
               style={{
@@ -4337,6 +4532,7 @@ export default function SettingsPage({
             subtitle="Export your data or restore from a previous backup file"
           />
           <BackupRestoreSection />
+          <LibraryMaintenanceSection />
         </div>
 
         {/* ══════════════════════════════════════════════════════════════════ */}
@@ -4360,7 +4556,7 @@ export default function SettingsPage({
             <div style={{ padding: "22px 24px" }}>
               <CleanRow
                 title="Install Location"
-                description="Opens the folder where Streambert is installed."
+                description="Opens the folder where Gigi is installed."
                 buttonLabel="Open Folder"
                 onAction={async () => {
                   const p = await window.electron?.getInstallPath?.();
@@ -4406,7 +4602,7 @@ export default function SettingsPage({
             <div style={{ padding: "22px 24px" }}>
               <CleanRow
                 title="Delete All Downloads"
-                description="Permanently deletes all video files that were downloaded through Streambert and removes them from the download list. Only files downloaded through the app will be deleted, nothing else in your folder is touched."
+                description="Permanently deletes all video files that were downloaded through Gigi and removes them from the download list. Only files downloaded through the app will be deleted, nothing else in your folder is touched."
                 buttonLabel="Delete All"
                 onAction={() =>
                   new Promise((resolve) => {
@@ -4472,7 +4668,7 @@ export default function SettingsPage({
                       lineHeight: 1.6,
                     }}
                   >
-                    Completely resets Streambert to factory defaults, clears all
+                    Completely resets Gigi to factory defaults, clears all
                     settings, API Token, saved library, watch history/progress,
                     and all cached data. Your downloaded video files will not be
                     touched.

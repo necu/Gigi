@@ -204,6 +204,64 @@ contextBridge.exposeInMainWorld("electron", {
     ipcRenderer.invoke("discord-rpc-set-enabled", enabled),
   discordRpcUpdateActivity: (activity) =>
     ipcRenderer.invoke("discord-rpc-update-activity", activity),
+
+  // ── Watchlist database (SQLite, main process) ────────────────────────────
+  // Durable library store. The renderer keeps an optimistic copy and mirrors
+  // every mutation here; localStorage remains a backup / stock-app bridge.
+  watchlistDb: {
+    available: () => ipcRenderer.invoke("watchlist-db:available"),
+    load: () => ipcRenderer.invoke("watchlist-db:load"),
+    upsert: (entry, patch) =>
+      ipcRenderer.invoke("watchlist-db:upsert", { entry, patch }),
+    update: (key, patch) =>
+      ipcRenderer.invoke("watchlist-db:update", { key, patch }),
+    remove: (key) => ipcRenderer.invoke("watchlist-db:remove", { key }),
+    removeMany: (keys) =>
+      ipcRenderer.invoke("watchlist-db:remove-many", { keys }),
+    restore: (entry, index) =>
+      ipcRenderer.invoke("watchlist-db:restore", { entry, index }),
+    reorder: (order) => ipcRenderer.invoke("watchlist-db:reorder", { order }),
+    bulkUpdate: (keys, patch) =>
+      ipcRenderer.invoke("watchlist-db:bulk-update", { keys, patch }),
+    importState: (state, options) =>
+      ipcRenderer.invoke("watchlist-db:import", { state, options }),
+    exportState: () => ipcRenderer.invoke("watchlist-db:export"),
+    search: (options) => ipcRenderer.invoke("watchlist-db:search", options),
+    stats: () => ipcRenderer.invoke("watchlist-db:stats"),
+    tags: () => ipcRenderer.invoke("watchlist-db:tags"),
+    collections: () => ipcRenderer.invoke("watchlist-db:collections"),
+    playlists: () => ipcRenderer.invoke("watchlist-db:playlists"),
+    playlistsFull: () => ipcRenderer.invoke("watchlist-db:playlists-full"),
+    getPlaylist: (id) =>
+      ipcRenderer.invoke("watchlist-db:playlist-get", { id }),
+    savePlaylist: (playlist) =>
+      ipcRenderer.invoke("watchlist-db:playlist-save", { playlist }),
+    deletePlaylist: (id) =>
+      ipcRenderer.invoke("watchlist-db:playlist-delete", { id }),
+    touchPlaylist: (id) =>
+      ipcRenderer.invoke("watchlist-db:playlist-touch", { id }),
+    renameCollection: (from, to) =>
+      ipcRenderer.invoke("watchlist-db:rename-collection", { from, to }),
+    deleteCollection: (name) =>
+      ipcRenderer.invoke("watchlist-db:delete-collection", { name }),
+    prune: () => ipcRenderer.invoke("watchlist-db:prune"),
+    integrity: () => ipcRenderer.invoke("watchlist-db:integrity"),
+    checkpoint: () => ipcRenderer.invoke("watchlist-db:checkpoint"),
+  },
+
+  // ── Search database (SQLite, main process) ───────────────────────────────
+  // Owns the search history, per-query best match and click signals used to
+  // rank results and remember what a vague title turned out to be.
+  searchDb: {
+    available: () => ipcRenderer.invoke("search-db:available"),
+    record: (payload) => ipcRenderer.invoke("search-db:record", payload),
+    recordPick: (payload) =>
+      ipcRenderer.invoke("search-db:record-pick", payload),
+    suggest: (limit) => ipcRenderer.invoke("search-db:suggest", { limit }),
+    boosts: () => ipcRenderer.invoke("search-db:boosts"),
+    stats: () => ipcRenderer.invoke("search-db:stats"),
+    clear: () => ipcRenderer.invoke("search-db:clear"),
+  },
 });
 
 if (process.platform === "darwin") {

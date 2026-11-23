@@ -56,6 +56,7 @@ import {
 } from "../components/Icons";
 import DownloadModal from "../components/DownloadModal";
 import TrailerModal from "../components/TrailerModal";
+import RelatedSection from "../components/RelatedSection";
 import BlockedStatsModal from "../components/BlockedStatsModal";
 import { useBlockedStats } from "../utils/useBlockedStats";
 import {
@@ -426,6 +427,10 @@ export default function TVPage({
   downloads,
   onGoToDownloads,
   onEpisodeChange,
+  onSelect,
+  isSavedItem,
+  onToggleSaveItem,
+  onOpenPerson,
 }) {
   const [details, setDetails] = useState(null);
   const [seasonData, setSeasonData] = useState(null);
@@ -2657,6 +2662,15 @@ export default function TVPage({
         </>
       )}
 
+      <RelatedSection
+        type="tv"
+        id={item.id}
+        apiKey={apiKey}
+        onSelect={onSelect}
+        isSaved={isSavedItem}
+        onToggleSave={onToggleSaveItem}
+      />
+
       {showTrailer && trailerKey && (
         <TrailerModal
           trailerKey={trailerKey}
@@ -2671,6 +2685,10 @@ export default function TVPage({
           crew={credits.crew}
           creators={details?.created_by || []}
           title={title}
+          onOpenPerson={(person) => {
+            setShowCast(false);
+            onOpenPerson?.(person);
+          }}
           onClose={() => setShowCast(false)}
         />
       )}

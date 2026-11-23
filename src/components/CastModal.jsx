@@ -46,29 +46,35 @@ const getDirectors = (crew) =>
       .filter((person) => person.jobList.includes("Director")),
   );
 
-const getWriters = (crew) => {
-  const writerJobs = ["Screenplay", "Writer", "Story", "Novel"];
-  return dedupeById(
+const getByJobs = (crew, jobs) =>
+  dedupeById(
     crew
       .map(normalizeCrewPerson)
-      .filter((person) =>
-        person.jobList.some((job) => writerJobs.includes(job)),
-      ),
+      .filter((person) => person.jobList.some((job) => jobs.includes(job))),
   );
-};
 
-function PersonCard({ person }) {
+const getWriters = (crew) =>
+  getByJobs(crew, [
+    "Screenplay",
+    "Writer",
+    "Story",
+    "Teleplay",
+    "Novel",
+    "Characters",
+  ]);
+
+function PersonCard({ person, onOpenPerson }) {
   const subtitle =
     person.characterList?.join(", ") || person.jobList?.join(", ") || "";
-
-  return (
-    <div className="cast-person">
+  const content = (
+    <>
       {person.profile_path ? (
         <img
           src={imgUrl(person.profile_path, "w185")}
           alt={person.name}
           className="cast-person-photo"
           loading="lazy"
+          decoding="async"
         />
       ) : (
         <div className="cast-person-photo cast-person-photo--fallback">
@@ -77,18 +83,38 @@ function PersonCard({ person }) {
       )}
       <div className="cast-person-name">{person.name}</div>
       <div className="cast-person-character">{subtitle}</div>
-    </div>
+    </>
+  );
+
+  if (!onOpenPerson) {
+    return <div className="cast-person">{content}</div>;
+  }
+
+  return (
+    <button
+      type="button"
+      className="cast-person cast-person--link"
+      onClick={() => onOpenPerson(person)}
+      title={`Open ${person.name}'s page`}
+      aria-label={`Open ${person.name}'s page`}
+    >
+      {content}
+    </button>
   );
 }
 
-function Section({ title, people, limit }) {
+function Section({ title, people, limit, onOpenPerson }) {
   if (!people.length) return null;
   return (
     <div className="cast-section">
       <div className="cast-section-title">{title}</div>
       <div className="cast-grid">
         {people.slice(0, limit).map((person) => (
-          <PersonCard key={person.id} person={person} />
+          <PersonCard
+            key={person.id}
+            person={person}
+            onOpenPerson={onOpenPerson}
+          />
         ))}
       </div>
     </div>
@@ -101,6 +127,7 @@ export default function CastModal({
   crew = [],
   creators = [],
   title,
+  onOpenPerson,
 }) {
   useEffect(() => {
     const handler = (e) => {
@@ -121,10 +148,49 @@ export default function CastModal({
 
   const directors = useMemo(() => getDirectors(crew), [crew]);
   const writers = useMemo(() => getWriters(crew), [crew]);
+  const cinematographers = useMemo(
+    () => getByJobs(crew, ["Director of Photography", "Cinematography"]),
+    [crew],
+  );
+  const composers = useMemo(
+    () => getByJobs(crew, ["Original Music Composer", "Music", "Composer"]),
+    [crew],
+  );
+  const producers = useMemo(
+    () =>
+      getByJobs(crew, [
+        "Producer",
+        "Executive Producer",
+        "Co-Producer",
+        "Line Producer",
+      ]),
+    [crew],
+  );
   const normalizedCast = useMemo(
     () => dedupeById(cast.map(normalizeCastPerson)),
     [cast],
   );
+  const normalizedCreators = useMemo(
+    () =>
+      dedupeById(
+        creators.map((person) => ({ ...person, jobList: ["Creator"] })),
+      ),
+    [creators],
+  );
+  const otherCrew = useMemo(() => {
+    const featured = new Set(
+      [
+        ...directors,
+        ...writers,
+        ...cinematographers,
+        ...composers,
+        ...producers,
+      ].map((person) => person.id),
+    );
+    return dedupeById(crew.map(normalizeCrewPerson)).filter(
+      (person) => !featured.has(person.id),
+    );
+  }, [crew, directors, writers, cinematographers, composers, producers]);
 
   return (
     <div className="cast-overlay" onClick={onClose}>
@@ -147,14 +213,58 @@ export default function CastModal({
         </div>
 
         <div className="cast-modal-body">
-          <Section title="Creators" people={creators} limit={4} />
-          <Section title="Directors" people={directors} limit={4} />
-          <Section title="Writers" people={writers} limit={4} />
+          <Section
+            title="Creators"
+            people={normalizedCreators}
+            limit={4}
+            onOpenPerson={onOpenPerson}
+          />
+          <Section
+            title="Directors"
+            people={directors}
+            limit={4}
+            onOpenPerson={onOpenPerson}
+          />
+          <Section
+            title="Writers"
+            people={writers}
+            limit={6}
+            onOpenPerson={onOpenPerson}
+          />
+          <Section
+            title="Cinematography"
+            people={cinematographers}
+            limit={4}
+            onOpenPerson={onOpenPerson}
+          />
+          <Section
+            title="Music"
+            people={composers}
+            limit={4}
+            onOpenPerson={onOpenPerson}
+          />
+          <Section
+            title="Producers"
+            people={producers}
+            limit={6}
+            onOpenPerson={onOpenPerson}
+          />
           {normalizedCast.length > 0 ? (
-            <Section title="Cast" people={normalizedCast} limit={20} />
+            <Section
+              title="Cast"
+              people={normalizedCast}
+              limit={20}
+              onOpenPerson={onOpenPerson}
+            />
           ) : (
             <div className="cast-empty">No cast information available.</div>
           )}
+          <Section
+            title="More crew"
+            people={otherCrew}
+            limit={30}
+            onOpenPerson={onOpenPerson}
+          />
         </div>
       </div>
     </div>

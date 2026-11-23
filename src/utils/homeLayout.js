@@ -5,6 +5,7 @@ import { storage } from "./storage";
 
 export const HOME_ROWS = [
   { id: "continue", label: "Continue Watching" },
+  { id: "recent", label: "Recently Added" },
   { id: "recommended", label: "Recommended for You" },
   { id: "trendingMovies", label: "Trending Movies" },
   { id: "trendingTV", label: "Trending Series" },
@@ -21,12 +22,19 @@ export function loadHomeLayout() {
   const savedVisible = storage.get("homeRowVisible");
   const knownIds = new Set(HOME_ROWS.map((r) => r.id));
 
-  const order = savedOrder
-    ? [
-        ...savedOrder.filter((id) => knownIds.has(id)),
-        ...DEFAULT_ROW_ORDER.filter((id) => !savedOrder.includes(id)),
-      ]
-    : DEFAULT_ROW_ORDER;
+  let order = DEFAULT_ROW_ORDER;
+  if (Array.isArray(savedOrder)) {
+    order = savedOrder.filter((id) => knownIds.has(id));
+    for (const id of DEFAULT_ROW_ORDER) {
+      if (order.includes(id)) continue;
+      if (id === "recent") {
+        const continueIndex = order.indexOf("continue");
+        order.splice(continueIndex >= 0 ? continueIndex + 1 : 0, 0, id);
+      } else {
+        order.push(id);
+      }
+    }
+  }
 
   const visible = savedVisible
     ? { ...DEFAULT_ROW_VISIBLE, ...savedVisible }

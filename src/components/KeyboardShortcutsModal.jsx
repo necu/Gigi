@@ -1,7 +1,14 @@
+import { useRef } from "react";
+import useFocusTrap from "../utils/useFocusTrap";
+
 // Keyboard Shortcuts reference modal
 export default function KeyboardShortcutsModal({ onClose }) {
+  const dialogRef = useRef(null);
+  useFocusTrap(dialogRef, { onEscape: onClose });
+
   const shortcuts = [
     { keys: ["Ctrl", "F"], desc: "Open search" },
+    { keys: ["Ctrl", "Shift", "P"], desc: "Open command palette" },
     { keys: ["Ctrl", "K"], desc: "Search on a page" },
     { keys: ["Esc"], desc: "Close search / modal" },
     { keys: ["Ctrl", "Z"], desc: "Navigate back" },
@@ -24,6 +31,8 @@ export default function KeyboardShortcutsModal({ onClose }) {
       }}
     >
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
         style={{
           background: "var(--surface)",
@@ -243,11 +252,11 @@ export default function KeyboardShortcutsModal({ onClose }) {
             </div>
           </div>
           <a
-            href="https://github.com/truelockmc/streambert"
+            href="https://github.com/necu/Gigi"
             onClick={(e) => {
               e.preventDefault();
               window.electron?.openExternal(
-                "https://github.com/truelockmc/streambert",
+                "https://github.com/necu/Gigi",
               );
             }}
             style={{

@@ -1,17 +1,40 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { memo, useState, useEffect, useMemo, useCallback } from "react";
 import MediaCard from "../components/MediaCard";
 import TrendingCarousel from "../components/TrendingCarousel";
 import { PlayIcon, StarIcon } from "../components/Icons";
 import { imgUrl, tmdbFetch } from "../utils/api";
 import { useRatings, getRatingForItem } from "../utils/useRatings";
 import { isRestricted } from "../utils/ageRating";
-import { storage } from "../utils/storage";
 import { loadHomeLayout, loadHomeViewMode } from "../utils/homeLayout";
+import {
+  getHomeLanguage,
+  readHomeFeedCache,
+  readRecommendationCache,
+  writeHomeFeedCache,
+  writeRecommendationCache,
+} from "../utils/homeFeedCache";
+import {
+  balanceMediaTypes,
+  curateHomeItems,
+  homeItemKey,
+  isReleased,
+  mergeUniqueItems,
+} from "../utils/homeCurator";
+
+function interleaveByType(movies, tv, limit = 24) {
+  const merged = [];
+  const max = Math.max(movies.length, tv.length);
+  for (let index = 0; index < max && merged.length < limit; index += 1) {
+    if (movies[index]) merged.push(movies[index]);
+    if (tv[index] && merged.length < limit) merged.push(tv[index]);
+  }
+  return merged;
+}
 
 /**
  * Extract up to `count` unique, recently watched items from the user's
- * history (within the last 30 days).  Returns newest-first and dedupes
- * by TMDB id + media_type so we don't fire duplicate API calls.
+ * history (within the last 30 days). Returns newest-first and dedupes by TMDB
+ * id + media_type so we don't fire duplicate API calls.
  */
 function getRecentHistoryItems(history, count = 5) {
   if (!history || history.length === 0) return [];
@@ -32,7 +55,7 @@ function getRecentHistoryItems(history, count = 5) {
   return unique;
 }
 
-export default function HomePage({
+function HomePage({
   trending,
   trendingTV,
   loading,
@@ -46,11 +69,26 @@ export default function HomePage({
   onMarkUnwatched,
   history,
   apiKey,
+  savedEntries = [],
 }) {
-  const hero = trending[0];
+  const hero = useMemo(() => {
+    const released = (trending || []).filter((item) => isReleased(item));
+    const best = curateHomeItems(released, {
+      limit: 1,
+      minRating: 0,
+      minVotes: 0,
+    });
+    return best[0] || trending?.[0] || null;
+  }, [trending]);
 
   const [recommendedItems, setRecommendedItems] = useState([]);
-  const [topRatedItems, setTopRatedItems] = useState([]);
+  const [topRatedItems, setTopRatedItems] = useState(
+    () => readHomeFeedCache()?.topRated || [],
+  );
+  const [popularItems, setPopularItems] = useState(
+    () => readHomeFeedCache()?.popular || [],
+  );
+  const [feedLang, setFeedLang] = useState(getHomeLanguage);
 
   // Load layout config (order + visibility) once on mount
   const [layout] = useState(() => loadHomeLayout());
@@ -59,15 +97,34 @@ export default function HomePage({
   const [viewMode] = useState(() => loadHomeViewMode());
 
   // All items for batch ratings fetch
+  const recentItems = useMemo(
+    () =>
+      [...savedEntries]
+        .sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0))
+        .slice(0, 12),
+    [savedEntries],
+  );
+
+  // All items for batch ratings fetch
   const allItems = useMemo(
     () => [
       ...inProgress,
       ...trending.map((i) => ({ ...i, media_type: "movie" })),
       ...trendingTV.map((i) => ({ ...i, media_type: "tv" })),
+      ...recentItems,
       ...recommendedItems,
       ...topRatedItems,
+      ...popularItems,
     ],
-    [inProgress, trending, trendingTV, recommendedItems, topRatedItems],
+    [
+      inProgress,
+      trending,
+      trendingTV,
+      recentItems,
+      recommendedItems,
+      topRatedItems,
+      popularItems,
+    ],
   );
 
   const { ratingsMap, ageLimitSetting } = useRatings(allItems);
@@ -92,16 +149,119 @@ export default function HomePage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ratingsMap, ageLimitSetting]);
 
-  // Filter recommended items that exceed age limit setting
-  const filteredRecommendedItems = useMemo(() => {
-    return recommendedItems.filter((item) => !itemRestricted(item));
-  }, [recommendedItems, itemRestricted]);
+  const topRatedMovies = useMemo(
+    () => topRatedItems.filter((item) => item.media_type === "movie"),
+    [topRatedItems],
+  );
+  const topRatedTV = useMemo(
+    () => topRatedItems.filter((item) => item.media_type === "tv"),
+    [topRatedItems],
+  );
+  const curatedTopRatedItems = useMemo(
+    () =>
+      balanceMediaTypes(
+        curateHomeItems(topRatedItems, {
+          limit: 24,
+          minRating: 7,
+          minVotes: 100,
+          relaxWhenSmall: false,
+        }),
+        16,
+      ),
+    [topRatedItems],
+  );
+
+  const watchedAndSavedKeys = useMemo(() => {
+    const keys = new Set();
+    for (const item of history || []) keys.add(homeItemKey(item));
+    for (const item of savedEntries) keys.add(homeItemKey(item));
+    return keys;
+  }, [history, savedEntries]);
+
+  const popularPicks = useMemo(
+    () =>
+      balanceMediaTypes(
+        curateHomeItems(popularItems, {
+          limit: 24,
+          minRating: 6.5,
+          minVotes: 100,
+          relaxWhenSmall: false,
+        }),
+        12,
+      ),
+    [popularItems],
+  );
+
+  const fallbackRecommendationItems = useMemo(() => {
+    const diverseFallback = mergeUniqueItems(
+      popularPicks,
+      curatedTopRatedItems,
+      24,
+    ).filter((item) => !watchedAndSavedKeys.has(homeItemKey(item)));
+    return balanceMediaTypes(diverseFallback, 16);
+  }, [popularPicks, curatedTopRatedItems, watchedAndSavedKeys]);
+
+  // Personal history first, then a high-quality fallback so the shelf never
+  // disappears for a new user or when TMDB has no recommendations.
+  const curatedRecommendedItems = useMemo(
+    () =>
+      mergeUniqueItems(
+        curateHomeItems(recommendedItems, {
+          limit: 12,
+          minRating: 6,
+          minVotes: 20,
+          relaxWhenSmall: false,
+        }),
+        fallbackRecommendationItems,
+        24,
+      ),
+    [recommendedItems, fallbackRecommendationItems],
+  );
+
+  const filteredRecommendedItems = useMemo(
+    () =>
+      balanceMediaTypes(
+        curatedRecommendedItems.filter(
+          (item) =>
+            !itemRestricted(item) &&
+            !watchedAndSavedKeys.has(homeItemKey(item)),
+        ),
+        12,
+      ),
+    [curatedRecommendedItems, itemRestricted, watchedAndSavedKeys],
+  );
+
+  // Refresh recommendations when the actual history changes, not only when its
+  // length changes (e.g. removing one item and watching another).
+  const historySignature = useMemo(
+    () =>
+      (history || [])
+        .slice(0, 12)
+        .map((item) => homeItemKey(item))
+        .join("|"),
+    [history],
+  );
+
+  // Keep the feed cache in sync when the user changes metadata language from
+  // Settings, without requiring a Home remount.
+  useEffect(() => {
+    const handler = () => setFeedLang(getHomeLanguage());
+    window.addEventListener("streambert:tmdb-lang-changed", handler);
+    return () =>
+      window.removeEventListener("streambert:tmdb-lang-changed", handler);
+  }, []);
 
   // Fetch personalised recommendations from multiple recent history items
   useEffect(() => {
     if (!apiKey || offline || !history || history.length === 0) return;
     const sources = getRecentHistoryItems(history, 5);
     if (sources.length === 0) return;
+
+    const cached = readRecommendationCache(historySignature, feedLang);
+    if (cached !== null) {
+      setRecommendedItems(cached);
+      return;
+    }
 
     const controller = new AbortController();
 
@@ -152,7 +312,9 @@ export default function HomePage({
           return true;
         });
 
-        setRecommendedItems(deduped.slice(0, 20));
+        const items = deduped.slice(0, 20);
+        setRecommendedItems(items);
+        writeRecommendationCache(historySignature, items, feedLang);
       })
       .catch((e) => {
         if (e.name !== "AbortError")
@@ -161,50 +323,109 @@ export default function HomePage({
 
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiKey, offline, history?.length]);
+  }, [apiKey, offline, historySignature, feedLang]);
 
-  // Fetch top rated movies + TV, merge and shuffle
+  // Fetch Top Rated and Popular together. They power several Home rows, so one
+  // shared cache and one effect avoids duplicate mounts and repeated requests
+  // when navigating away from Home and back.
   useEffect(() => {
     if (!apiKey || offline) return;
+    const cached = readHomeFeedCache(feedLang);
+    if (cached) {
+      setTopRatedItems(cached.topRated);
+      setPopularItems(cached.popular);
+      return;
+    }
+
     const controller = new AbortController();
     Promise.all([
       tmdbFetch("/movie/top_rated?page=1", apiKey, {
         signal: controller.signal,
       }),
       tmdbFetch("/tv/top_rated?page=1", apiKey, { signal: controller.signal }),
+      tmdbFetch("/movie/popular?page=1", apiKey, {
+        signal: controller.signal,
+      }),
+      tmdbFetch("/tv/popular?page=1", apiKey, { signal: controller.signal }),
     ])
-      .then(([moviesData, tvData]) => {
-        const movies = (moviesData.results || [])
-          .slice(0, 8)
-          .map((i) => ({ ...i, media_type: "movie" }));
-        const tv = (tvData.results || [])
-          .slice(0, 8)
-          .map((i) => ({ ...i, media_type: "tv" }));
-        // Interleave movies and TV for variety
-        const merged = [];
-        const max = Math.max(movies.length, tv.length);
-        for (let i = 0; i < max; i++) {
-          if (movies[i]) merged.push(movies[i]);
-          if (tv[i]) merged.push(tv[i]);
-        }
-        setTopRatedItems(merged);
+      .then(([topMovies, topTV, popularMovies, popularTV]) => {
+        const topRated = interleaveByType(
+          (topMovies.results || [])
+            .slice(0, 12)
+            .map((item) => ({ ...item, media_type: "movie" })),
+          (topTV.results || [])
+            .slice(0, 12)
+            .map((item) => ({ ...item, media_type: "tv" })),
+          24,
+        );
+        const popular = interleaveByType(
+          (popularMovies.results || []).map((item) => ({
+            ...item,
+            media_type: "movie",
+          })),
+          (popularTV.results || []).map((item) => ({
+            ...item,
+            media_type: "tv",
+          })),
+          24,
+        );
+        setTopRatedItems(topRated);
+        setPopularItems(popular);
+        writeHomeFeedCache({ topRated, popular }, feedLang);
       })
       .catch((e) => {
-        if (e.name !== "AbortError") console.warn("Top rated fetch failed", e);
+        if (e.name !== "AbortError") {
+          console.warn("Home feed fetch failed", e);
+        }
       });
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiKey, offline]);
+  }, [apiKey, offline, feedLang]);
 
-  // Stable pre-built item arrays for carousels, capped at 10
-  const trendingMovieItems = useMemo(
-    () => trending.slice(0, 10).map((i) => ({ ...i, media_type: "movie" })),
-    [trending],
-  );
-  const trendingTVItems = useMemo(
-    () => trendingTV.slice(0, 10).map((i) => ({ ...i, media_type: "tv" })),
-    [trendingTV],
-  );
+  // Curate each row instead of showing the raw TMDB order. Trending titles lead
+  // their rows, then current popular titles fill gaps, with top-rated as the
+  // final backstop so a row never looks like an unrelated classics shelf.
+  const trendingMovieItems = useMemo(() => {
+    const primary = curateHomeItems(
+      (trending || []).map((i) => ({ ...i, media_type: "movie" })),
+      { limit: 12, minRating: 5.8, minVotes: 100 },
+    );
+    const popularFallback = curateHomeItems(
+      popularItems.filter((item) => item.media_type === "movie"),
+      { limit: 12, minRating: 6.5, minVotes: 100 },
+    );
+    const topFallback = curateHomeItems(topRatedMovies, {
+      limit: 12,
+      minRating: 7,
+      minVotes: 100,
+    });
+    return mergeUniqueItems(
+      primary,
+      mergeUniqueItems(popularFallback, topFallback, 24),
+      12,
+    );
+  }, [trending, topRatedMovies, popularItems]);
+
+  const trendingTVItems = useMemo(() => {
+    const primary = curateHomeItems(
+      (trendingTV || []).map((i) => ({ ...i, media_type: "tv" })),
+      { limit: 12, minRating: 5.8, minVotes: 100 },
+    );
+    const popularFallback = curateHomeItems(
+      popularItems.filter((item) => item.media_type === "tv"),
+      { limit: 12, minRating: 6.5, minVotes: 100 },
+    );
+    const topFallback = curateHomeItems(topRatedTV, {
+      limit: 12,
+      minRating: 7,
+      minVotes: 100,
+    });
+    return mergeUniqueItems(
+      primary,
+      mergeUniqueItems(popularFallback, topFallback, 24),
+      12,
+    );
+  }, [trendingTV, topRatedTV, popularItems]);
 
   return (
     <div className="fade-in">
@@ -320,7 +541,13 @@ export default function HomePage({
         }
 
         // Render a section as a flat cards-grid (list view)
-        const renderList = (key, title, titleHighlight, items) => {
+        const renderList = (
+          key,
+          title,
+          titleHighlight,
+          items,
+          subtitle,
+        ) => {
           if (!items || items.length === 0) return null;
           return (
             <div key={key} className="section">
@@ -336,6 +563,9 @@ export default function HomePage({
                   title
                 )}
               </div>
+              {subtitle && (
+                <div className="section-subtitle">{subtitle}</div>
+              )}
               <div className="cards-grid">
                 {items.map((item) => {
                   const type = item.media_type === "tv" ? "tv" : "movie";
@@ -360,6 +590,28 @@ export default function HomePage({
           );
         };
 
+        if (id === "recent") {
+          if (recentItems.length === 0) return null;
+          if (viewMode === "list")
+            return renderList(
+              "recent",
+              "Recently Added",
+              null,
+              recentItems,
+              "Fresh additions to your library",
+            );
+          return (
+            <TrendingCarousel
+              key="recent"
+              items={recentItems}
+              title="Recently Added"
+              subtitle="Fresh additions to your library"
+              onSelect={onSelect}
+              ratingsMap={enrichedRatingsMap}
+            />
+          );
+        }
+
         if (id === "recommended") {
           if (filteredRecommendedItems.length === 0) return null;
           if (viewMode === "list")
@@ -368,12 +620,14 @@ export default function HomePage({
               "Recommended for You",
               null,
               filteredRecommendedItems,
+              "Personal picks and proven favourites",
             );
           return (
             <TrendingCarousel
               key="recommended"
               items={filteredRecommendedItems}
               title="Recommended for You"
+              subtitle="Personal picks and proven favourites"
               onSelect={onSelect}
               ratingsMap={enrichedRatingsMap}
             />
@@ -388,12 +642,14 @@ export default function HomePage({
               "Trending Movies",
               null,
               trendingMovieItems,
+              "The strongest films trending this week",
             );
           return (
             <TrendingCarousel
               key="trendingMovies"
               items={trendingMovieItems}
               title="Trending Movies"
+              subtitle="The strongest films trending this week"
               onSelect={onSelect}
               ratingsMap={enrichedRatingsMap}
             />
@@ -408,12 +664,14 @@ export default function HomePage({
               "Trending Series",
               null,
               trendingTVItems,
+              "The strongest series trending this week",
             );
           return (
             <TrendingCarousel
               key="trendingTV"
               items={trendingTVItems}
               title="Trending Series"
+              subtitle="The strongest series trending this week"
               onSelect={onSelect}
               ratingsMap={enrichedRatingsMap}
             />
@@ -421,14 +679,21 @@ export default function HomePage({
         }
 
         if (id === "topRated") {
-          if (topRatedItems.length === 0) return null;
+          if (curatedTopRatedItems.length === 0) return null;
           if (viewMode === "list")
-            return renderList("topRated", "Top Rated", null, topRatedItems);
+            return renderList(
+              "topRated",
+              "Top Rated",
+              null,
+              curatedTopRatedItems,
+              "The highest-rated films and series in the catalogue",
+            );
           return (
             <TrendingCarousel
               key="topRated"
-              items={topRatedItems}
+              items={curatedTopRatedItems}
               title="Top Rated"
+              subtitle="The highest-rated films and series in the catalogue"
               onSelect={onSelect}
               ratingsMap={enrichedRatingsMap}
             />
@@ -440,3 +705,5 @@ export default function HomePage({
     </div>
   );
 }
+
+export default memo(HomePage);

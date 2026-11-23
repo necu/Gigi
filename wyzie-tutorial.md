@@ -24,7 +24,7 @@ Copy the key starting with ```wyzie-``` that should show up now.
 
 ![Copy your key](screenshots/copy_wyzie.png)
 
-After that, just paste it into streambert.
+After that, just paste it into Gigi.
 
 ![Paste your key](screenshots/paste_wyzie.png)
 
@@ -32,4 +32,4 @@ After that, just paste it into streambert.
 
 ## Something not working?
 
-If this guide is outdated or you're running into any issues, please [open an issue](https://github.com/truelockmc/streambert/issues/new) on GitHub.
+If this guide is outdated or you're running into any issues, please [open an issue](https://github.com/necu/Gigi/issues/new) on GitHub.

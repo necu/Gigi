@@ -1,10 +1,14 @@
 {
-  "name": "streambert",
-  "version": "2.7.0",
-  "description": "Streambert Desktop App",
+  "name": "gigi",
+  "version": "2.8.0",
+  "description": "Gigi Desktop App",
   "author": {
     "name": "truelockmc",
     "email": "anonyson@proton.me"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/necu/Gigi.git"
   },
   "license": "GPL-3.0",
   "main": "index.js",
@@ -38,7 +42,7 @@
   },
   "build": {
     "appId": "com.truelockmc.streambert",
-    "productName": "Streambert",
+    "productName": "Gigi",
     "asar": true,
     "compression": "normal",
     "directories": {
@@ -93,8 +97,7 @@
       "createStartMenuShortcut": true,
       "selectPerMachineByDefault": false,
       "license": "LICENSE",
-      "uninstallDisplayName": "Uninstall Streambert",
-      "installerSidebar": "public/installer-sidebar.bmp"
+      "uninstallDisplayName": "Uninstall Gigi"
     },
     "win": {
       "icon": "public/icon.png",
@@ -159,11 +162,11 @@
       "icon": "public/sized",
       "desktop": {
         "entry": {
-          "Name": "Streambert",
-          "Comment": "Streambert Desktop App",
+          "Name": "Gigi",
+          "Comment": "Gigi Desktop App",
           "Categories": "AudioVideo;Video;Player;Multimedia;Internet;",
-          "Icon": "streambert",
-          "StartupWMClass": "Streambert"
+          "Icon": "gigi",
+          "StartupWMClass": "Gigi"
         }
       }
     },

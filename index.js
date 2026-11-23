@@ -11,6 +11,15 @@ const {
   Notification,
 } = require("electron");
 const path = require("path");
+const fs = require("fs");
+
+// Keep the existing data directory after the Streambert -> Gigi rename so the
+// library, playlists, settings and download history survive the update.
+app.setName("Gigi");
+const legacyUserData = path.join(app.getPath("appData"), "streambert");
+if (fs.existsSync(legacyUserData)) {
+  app.setPath("userData", legacyUserData);
+}
 
 // -- RAM / performance flags ---------------------------------------------------
 // Low-RAM mode is ON by default. Disable it with STREAMBERT_LOW_RAM=0.
@@ -41,6 +50,8 @@ const _bench = (label) =>
 const blockStats = require("./src/ipc/blockStats");
 const siteTweaks = require("./src/ipc/siteTweaks");
 const storageIpc = require("./src/ipc/storage");
+const watchlistDb = require("./src/ipc/watchlistDb");
+const searchDb = require("./src/ipc/searchDb");
 const downloadsIpc = require("./src/ipc/downloads");
 const subtitlesIpc = require("./src/ipc/subtitles");
 const hianimeIpc = require("./src/ipc/hianime");
@@ -615,6 +626,8 @@ function createWindow() {
 
 // -- Register all IPC modules --------------------------------------------------
 storageIpc.register();
+watchlistDb.register();
+searchDb.register();
 downloadsIpc.register(getMainWindow);
 subtitlesIpc.register({
   getDownloads: downloadsIpc.getDownloads,

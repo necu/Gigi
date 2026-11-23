@@ -152,6 +152,7 @@ export default function TrendingCarousel({
   onSelect,
   title,
   titleHighlight,
+  subtitle,
   ratingsMap = {},
 }) {
   const count = items.length;
@@ -381,6 +382,7 @@ export default function TrendingCarousel({
           title
         )}
       </div>
+      {subtitle && <div className="section-subtitle">{subtitle}</div>}
 
       <div
         className="carousel-wrapper"

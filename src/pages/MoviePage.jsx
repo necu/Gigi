@@ -49,6 +49,8 @@ import {
 import DownloadModal from "../components/DownloadModal";
 import TrailerModal from "../components/TrailerModal";
 import BlockedStatsModal from "../components/BlockedStatsModal";
+import SagaModal from "../components/SagaModal";
+import RelatedSection from "../components/RelatedSection";
 import { useBlockedStats } from "../utils/useBlockedStats";
 import MediaCard from "../components/MediaCard";
 import {
@@ -94,8 +96,14 @@ export default function MoviePage({
   downloads,
   onGoToDownloads,
   onSelect,
+  isSavedItem,
+  onToggleSaveItem,
+  onAddSaga,
+  onOpenPlaylist,
+  onOpenPerson,
 }) {
   const [details, setDetails] = useState(null);
+  const [showSaga, setShowSaga] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [showDownload, setShowDownload] = useState(false);
   const [trailerKey, setTrailerKey] = useState(null);
@@ -938,6 +946,13 @@ export default function MoviePage({
                 {isSaved ? <BookmarkFillIcon /> : <BookmarkIcon />}
                 {isSaved ? "Saved" : "Save"}
               </button>
+              <button
+                className="btn btn-secondary btn-saga"
+                onClick={() => setShowSaga(true)}
+                title="Add a whole saga to your library as a playlist"
+              >
+                ⧉ Saga
+              </button>
               {!isUnreleased &&
                 (isWatched ? (
                   <button
@@ -1344,6 +1359,15 @@ export default function MoviePage({
         </div>
       )}
 
+      <RelatedSection
+        type="movie"
+        id={item.id}
+        apiKey={apiKey}
+        onSelect={onSelect}
+        isSaved={isSavedItem}
+        onToggleSave={onToggleSaveItem}
+      />
+
       {collection && onSelect && (
         <div className="section">
           <div className="section-title">{collection.name}</div>
@@ -1369,6 +1393,19 @@ export default function MoviePage({
         </div>
       )}
 
+      {showSaga && (
+        <SagaModal
+          type="movie"
+          item={item}
+          details={details}
+          apiKey={apiKey}
+          isSaved={isSavedItem}
+          onClose={() => setShowSaga(false)}
+          onAddSaga={onAddSaga}
+          onOpenPlaylist={onOpenPlaylist}
+        />
+      )}
+
       {showTrailer && trailerKey && (
         <TrailerModal
           trailerKey={trailerKey}
@@ -1382,6 +1419,10 @@ export default function MoviePage({
           cast={credits.cast}
           crew={credits.crew}
           title={title}
+          onOpenPerson={(person) => {
+            setShowCast(false);
+            onOpenPerson?.(person);
+          }}
           onClose={() => setShowCast(false)}
         />
       )}

@@ -111,7 +111,7 @@ function injectTitlebar() {
     whiteSpace: "nowrap",
     textOverflow: "ellipsis",
   });
-  label.textContent = "STREAMBERT";
+  label.textContent = "GIGI";
   bar.appendChild(label);
 
   // -- Buttons ---------------------------------------------------------------

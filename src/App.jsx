@@ -8,7 +8,6 @@ import {
   Suspense,
 } from "react";
 import ErrorBoundary from "./components/ErrorBoundary";
-import KeyboardShortcutsModal from "./components/KeyboardShortcutsModal";
 import WindowTitlebar from "./components/WindowTitlebar";
 import { storage, secureStorage, STORAGE_KEYS } from "./utils/storage";
 import {
@@ -16,9 +15,19 @@ import {
   applyTheme,
   ACCENT_PRESETS,
 } from "./utils/appearance";
-import { collectBackupData } from "./utils/backup";
-import { tmdbFetch, setApiErrorHandlers, imgUrl } from "./utils/api";
+import { collectFullBackup } from "./utils/backup";
+import {
+  tmdbFetch,
+  setApiErrorHandlers,
+  imgUrl,
+  isAnimeContent,
+} from "./utils/api";
 import { clearAppCaches } from "./utils/storage";
+import { useWatchlist } from "./utils/useWatchlist";
+import { getWatchKey } from "./utils/watchlist";
+import { mergeSmartPatch, smartPatchFor } from "./utils/autoCategorize";
+import { buildTasteProfile } from "./utils/searchBrain";
+import { organizeEntries } from "./utils/organizeLibrary";
 import {
   readDiscordRpcSettings,
   applyDiscordRpcEnabled,
@@ -28,17 +37,26 @@ import {
 } from "./utils/discordPresence";
 
 import Sidebar from "./components/Sidebar";
-import SearchModal from "./components/SearchModal";
 import SetupScreen from "./components/SetupScreen";
 import CloseConfirmModal from "./components/CloseConfirmModal";
-import UpdateModal from "./components/UpdateModal";
 import { useGamepadNav } from "./utils/useGamepadNav";
+
+// Modals that are only needed after a user action are split out of the shell
+// chunk. Ctrl+F or the update banner pays for them on first use.
+const SearchModal = lazy(() => import("./components/SearchModal"));
+const CommandPalette = lazy(() => import("./components/CommandPalette"));
+const UpdateModal = lazy(() => import("./components/UpdateModal"));
+const KeyboardShortcutsModal = lazy(
+  () => import("./components/KeyboardShortcutsModal"),
+);
 
 // Lazy-loaded pages: each chunk is only downloaded when the user first visits
 const HomePage = lazy(() => import("./pages/HomePage"));
 const MoviePage = lazy(() => import("./pages/MoviePage"));
 const TVPage = lazy(() => import("./pages/TVPage"));
 const LibraryPage = lazy(() => import("./pages/LibraryPage"));
+const PlaylistsPage = lazy(() => import("./pages/PlaylistsPage"));
+const PersonPage = lazy(() => import("./pages/PersonPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const DownloadsPage = lazy(() => import("./pages/DownloadsPage"));
 import {
@@ -55,6 +73,7 @@ export default function App() {
   const [page, setPage] = useState(() => storage.get("startPage") || "home");
   const [selected, setSelected] = useState(null);
   const [showSearch, setShowSearch] = useState(false);
+  const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [dlSearchOpen, setDlSearchOpen] = useState(false);
   const [librarySort, setLibrarySort] = useState(
     () => storage.get(STORAGE_KEYS.LIBRARY_SORT) || "manual",
@@ -65,15 +84,31 @@ export default function App() {
   // Navigation history stack for Ctrl+Z back navigation
   const [navStack, setNavStack] = useState([]);
 
-  const [saved, setSaved] = useState(() => storage.get("saved") || {});
-  // Separate order array for drag-and-drop reordering
-  const [savedOrder, setSavedOrder] = useState(
-    () => storage.get("savedOrder") || null,
+  const watchlist = useWatchlist();
+  const watchlistRef = useRef(watchlist);
+  watchlistRef.current = watchlist;
+
+  // Taste profile: drives search ranking and the "For you" shelf. Recomputed
+  // only when the library changes, never on unrelated re-renders.
+  const taste = useMemo(
+    () => buildTasteProfile(Object.values(watchlist.state.items || {})),
+    [watchlist.state],
   );
+
+  const savedEntries = useMemo(
+    () =>
+      (watchlist.state.order || [])
+        .map((key) => watchlist.state.items[key])
+        .filter(Boolean),
+    [watchlist.state],
+  );
+
   const [progress, setProgress] = useState(() => storage.get("progress") || {});
   const [history, setHistory] = useState(() => storage.get("history") || []);
   const [watched, setWatched] = useState(() => storage.get("watched") || {});
   const [toast, setToast] = useState(null);
+  const [organizing, setOrganizing] = useState(false);
+  const [organizeProgress, setOrganizeProgress] = useState(null);
   const [updateBanner, setUpdateBanner] = useState(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   // null | "checking" | { entries: object[] } | "none"
@@ -116,8 +151,8 @@ export default function App() {
       try {
         const settings = await window.electron.getScheduledBackupSettings();
         if (!settings?.enabled || !settings?.path) return;
-        const data = collectBackupData();
-        await window.electron.performScheduledBackup({ data, settings });
+        const backup = await collectFullBackup();
+        await window.electron.performScheduledBackup({ backup, settings });
       } catch {
         // silently ignore errors on scheduled backup
       }
@@ -139,17 +174,40 @@ export default function App() {
     });
   }, []);
 
-  // ── Startup update check ─────────────────────────────────────────────────
+  // ── Startup update check (deferred) ──────────────────────────────────────
+  // Network work must not compete with the first paint or the initial TMDB
+  // request. Wait for an idle slot, with a fallback timer for browsers that do
+  // not expose requestIdleCallback.
   useEffect(() => {
     if (!storage.get("autoCheckUpdates")) return;
-    const source =
-      storage.get(STORAGE_KEYS.UPDATE_SOURCE) || DEFAULT_UPDATE_SOURCE;
-    checkForUpdatesWithFallback(source)
-      .then((r) => {
-        if (r.hasUpdate) setUpdateBanner(r);
-      })
-      .catch(() => {}); // silently ignore network errors on startup
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    let cancelled = false;
+    let idleId = null;
+    let timer = null;
+
+    const run = () => {
+      if (cancelled) return;
+      const source =
+        storage.get(STORAGE_KEYS.UPDATE_SOURCE) || DEFAULT_UPDATE_SOURCE;
+      checkForUpdatesWithFallback(source)
+        .then((r) => {
+          if (!cancelled && r.hasUpdate) setUpdateBanner(r);
+        })
+        .catch(() => {}); // silently ignore network errors
+    };
+
+    if (typeof window.requestIdleCallback === "function") {
+      idleId = window.requestIdleCallback(run, { timeout: 5000 });
+    } else {
+      timer = setTimeout(run, 2000);
+    }
+
+    return () => {
+      cancelled = true;
+      if (idleId != null && typeof window.cancelIdleCallback === "function") {
+        window.cancelIdleCallback(idleId);
+      }
+      if (timer) clearTimeout(timer);
+    };
   }, []);
 
   // ── Startup: new-episode notification check ──────────────────────────────
@@ -158,6 +216,7 @@ export default function App() {
   // pill while checking, then either a result card or a brief "nothing new" message.
   useEffect(() => {
     if (!apiKeyLoaded) return;
+    if (!watchlist.ready) return;
     const notifyPref = storage.get(STORAGE_KEYS.NOTIFY_NEW_EPISODE);
     if (notifyPref === false || notifyPref === 0) return;
 
@@ -170,7 +229,7 @@ export default function App() {
 
       if (!apiKey || cancelled) return;
 
-      const tvSeries = Object.values(saved).filter(
+      const tvSeries = Object.values(watchlist.items).filter(
         (item) => item && item.media_type === "tv" && item.id,
       );
       if (!tvSeries.length) return;
@@ -329,7 +388,7 @@ export default function App() {
       cancelled = true;
       clearTimeout(episodeDismissTimerRef.current);
     };
-  }, [apiKeyLoaded]);
+  }, [apiKeyLoaded, watchlist.ready]);
 
   // ── Downloads state ──────────────────────────────────────────────────────
   const [downloads, setDownloads] = useState([]);
@@ -688,12 +747,42 @@ export default function App() {
     }
   }, []);
 
+  const openSearch = useCallback(() => setShowSearch(true), []);
+  const openShortcuts = useCallback(() => setShowShortcuts(true), []);
+
+  // Opens a reusable actor / director / crew profile. The page itself chooses
+  // the filmography filters from the person's departments.
+  const openPerson = useCallback(
+    (person) => {
+      if (person?.id) navigate("person", person);
+    },
+    [navigate],
+  );
+
+  // Loads a franchise as a playlist: the library page filters on the saved
+  // saga collection and shows every part in release order by default.
+  const openPlaylist = useCallback(
+    (collection) => {
+      if (collection) navigate("history", { collection });
+    },
+    [navigate],
+  );
+
   // ── Keyboard shortcuts ────────────────────────────────────────────────────
   useEffect(() => {
     const handler = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "f") {
         e.preventDefault();
+        setShowCommandPalette(false);
         setShowSearch(true);
+      }
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        e.shiftKey &&
+        e.key.toLowerCase() === "p"
+      ) {
+        e.preventDefault();
+        setShowCommandPalette((current) => !current);
       }
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         if (pageRef.current === "downloads") {
@@ -704,6 +793,7 @@ export default function App() {
       if (e.key === "Escape") {
         setShowSearch(false);
         setShowShortcuts(false);
+        setShowCommandPalette(false);
       }
       if (e.key === "?" && !e.ctrlKey && !e.metaKey) {
         const tag = (e.target?.tagName || "").toUpperCase();
@@ -744,7 +834,7 @@ export default function App() {
   const { connected: gamepadConnected } = useGamepadNav({
     enabled: gamepadEnabled,
     onBack: navigateBack,
-    onOpenSearch: () => setShowSearch(true),
+    onOpenSearch: openSearch,
   });
   useEffect(() => {
     if (!gamepadEnabled) return;
@@ -760,10 +850,13 @@ export default function App() {
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   const toastTimerRef = useRef(null);
-  const showToast = useCallback((msg) => {
+  const showToast = useCallback((message, action = null) => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    setToast(msg);
-    toastTimerRef.current = setTimeout(() => setToast(null), 2500);
+    setToast(action ? { message, action } : message);
+    toastTimerRef.current = setTimeout(
+      () => setToast(null),
+      action ? 5000 : 2500,
+    );
   }, []);
 
   const getMediaType = useCallback(
@@ -790,59 +883,252 @@ export default function App() {
     setSkipped(false);
   }, []);
 
-  // Ref so toggleSave never needs `saved` as a dep (avoids recreation on every save)
-  const savedRef = useRef(saved);
-  useEffect(() => {
-    savedRef.current = saved;
-  }, [saved]);
+  // ── Watchlist ────────────────────────────────────────────────────────────
+  // Enrich saved entries in the background so the related engine has genres,
+  // runtime and overview even when a title is saved straight from a card.
+  const enrichWatchlistEntry = useCallback(
+    async (item) => {
+      if (!apiKey) return;
+      const key = getWatchKey(item);
+      if (!key) return;
+      const type = item.media_type === "tv" ? "tv" : "movie";
+      try {
+        const details = await tmdbFetch(
+          type === "tv"
+            ? `/tv/${item.id}?append_to_response=aggregate_credits,keywords`
+            : `/movie/${item.id}?append_to_response=credits,keywords`,
+          apiKey,
+        );
+        if (!details) return;
+        const current = watchlistRef.current.items[key] || item;
+        // Genre, director, decade, language and franchise land in the entry's
+        // own category, without touching tags the user wrote by hand.
+        const smart = mergeSmartPatch(
+          current,
+          smartPatchFor(item, details, type),
+        );
+        watchlistRef.current.update(key, {
+          title: details.title || details.name || item.title || item.name,
+          poster_path: details.poster_path || item.poster_path || null,
+          backdrop_path: details.backdrop_path || item.backdrop_path || null,
+          overview: details.overview || item.overview || "",
+          vote_average: details.vote_average ?? item.vote_average ?? null,
+          vote_count: details.vote_count ?? item.vote_count ?? null,
+          popularity: details.popularity ?? item.popularity ?? null,
+          original_language:
+            details.original_language || item.original_language || null,
+          origin_country:
+            details.origin_country || item.origin_country || [],
+          genres: Array.isArray(details.genres)
+            ? details.genres.map((genre) => genre.id)
+            : [],
+          isAnime: isAnimeContent(details),
+          runtime:
+            details.runtime ??
+            details.episode_run_time?.[0] ??
+            item.runtime ??
+            null,
+          year:
+            (details.release_date || details.first_air_date || "").slice(0, 4) ||
+            item.year ||
+            "",
+          ...smart,
+        });
+      } catch {
+        // Offline or invalid token: keep the light metadata from the card.
+      }
+    },
+    [apiKey],
+  );
 
   const toggleSave = useCallback(
     (item) => {
-      const mt = getMediaType(item);
-      const id = `${mt}_${item.id}`;
-      const currentSaved = savedRef.current;
-      const isRemoving = !!currentSaved[id];
-      const next = { ...currentSaved };
+      const key = getWatchKey(item);
+      if (!key) return;
+      const wl = watchlistRef.current;
+      const entry = wl.items[key] || null;
+      const index = entry ? wl.order.indexOf(key) : 0;
+      // Categorise instantly from whatever metadata the card already has; the
+      // background enrichment adds director / franchise a moment later.
+      const immediate = smartPatchFor(item, null, getMediaType(item));
+      const patch = immediate.tags.length
+        ? {
+            tags: [
+              ...new Set([...(entry?.tags || []), ...immediate.tags]),
+            ],
+          }
+        : undefined;
+      const removed = wl.toggle(item, patch);
 
-      if (isRemoving) {
-        delete next[id];
-        showToast("Removed from watchlist");
-        setSavedOrder((prev) => {
-          const currentOrder = prev || Object.keys(currentSaved);
-          const newOrder = currentOrder.filter((k) => k !== id);
-          storage.set("savedOrder", newOrder);
-          return newOrder;
+      if (removed) {
+        showToast(`Removed “${entry?.title || item.title || item.name}”`, {
+          label: "Undo",
+          onClick: () => watchlistRef.current.restore(entry, index),
         });
       } else {
-        next[id] = {
-          id: item.id,
-          title: item.title || item.name,
-          poster_path: item.poster_path,
-          media_type: mt,
-          vote_average: item.vote_average,
-          year: (item.release_date || item.first_air_date || "").slice(0, 4),
-        };
-        showToast("Added to watchlist");
-        setSavedOrder((prev) => {
-          const currentOrder = prev || Object.keys(currentSaved);
-          const newOrder = [...currentOrder, id];
-          storage.set("savedOrder", newOrder);
-          return newOrder;
-        });
+        showToast(`Added “${item.title || item.name}” to watchlist`);
+        enrichWatchlistEntry(item);
       }
-      setSaved(next);
-      storage.set("saved", next);
     },
-    [showToast, getMediaType],
+    [showToast, enrichWatchlistEntry],
   );
 
-  const isSaved = useCallback(
-    (item) => {
-      const id = `${getMediaType(item)}_${item.id}`;
-      return !!saved[id];
+  /** Adds a batch (saga, search picks) with one toast and background enrichment. */
+  const addItemsSmart = useCallback(
+    (items, options = {}) => {
+      if (!items?.length) return [];
+      const wl = watchlistRef.current;
+      const added = [];
+      const seen = new Set();
+      // Only the saga's own name groups every part together. Individual TMDB
+      // collections are added per title by the background enrichment, so an
+      // Alien film is never filed under "Predator Collection".
+      const sagaNames = options.saga?.name ? [options.saga.name] : [];
+
+      for (const item of items) {
+        const key = getWatchKey(item);
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        const existing = wl.items[key];
+        const patch = {};
+
+        if (sagaNames.length > 0) {
+          patch.collections = [
+            ...new Set([...(existing?.collections || []), ...sagaNames]),
+          ];
+        }
+        const derived = smartPatchFor(item, null, getMediaType(item));
+        if (derived.tags.length > 0) {
+          patch.tags = [
+            ...new Set([...(existing?.tags || []), ...derived.tags]),
+          ];
+        }
+
+        const entry = wl.add(
+          item,
+          Object.keys(patch).length > 0 ? patch : undefined,
+        );
+        if (entry) added.push(entry);
+      }
+
+      if (added.length === 0) {
+        showToast("Already in your library");
+        return [];
+      }
+
+      showToast(
+        options.saga
+          ? `Added ${added.length} titles to “${options.saga.name}”`
+          : `Added ${added.length} title${added.length === 1 ? "" : "s"} to your library`,
+      );
+      // Fire-and-forget: the TMDB queue caps concurrency, and each entry gets
+      // its director / franchise / decade tags when the details arrive.
+      for (const entry of added) enrichWatchlistEntry(entry);
+      return added;
     },
-    [saved, getMediaType],
+    [enrichWatchlistEntry, getMediaType, showToast],
   );
+
+  const organizeLibrary = useCallback(async () => {
+    if (!apiKey || organizing) return;
+    const entries = Object.values(watchlistRef.current.items || {});
+    if (entries.length === 0) {
+      showToast("Nothing to organize yet");
+      return;
+    }
+
+    setOrganizing(true);
+    setOrganizeProgress({ done: 0, total: 0 });
+    try {
+      const result = await organizeEntries({
+        entries,
+        apiKey,
+        limit: 50,
+        onProgress: (progress) => setOrganizeProgress(progress),
+      });
+
+      for (const { key, patch } of result.patches) {
+        watchlistRef.current.update(key, patch);
+      }
+
+      if (result.patches.length === 0) {
+        if (result.failed > 0 && result.failed === result.scanned) {
+          showToast("Could not reach TMDB to organize the library");
+        } else {
+          showToast(
+            result.scanned === 0
+              ? "Every title is already categorized"
+              : "Scanned titles are already in the right place",
+          );
+        }
+      } else {
+        showToast(
+          `Organized ${result.patches.length} title${
+            result.patches.length === 1 ? "" : "s"
+          }`,
+        );
+      }
+    } catch {
+      showToast("Could not organize the library");
+    } finally {
+      setOrganizing(false);
+      setOrganizeProgress(null);
+    }
+  }, [apiKey, organizing, showToast]);
+
+  const removeSavedWithUndo = useCallback(
+    (itemOrKey) => {
+      const wl = watchlistRef.current;
+      const key =
+        typeof itemOrKey === "string" ? itemOrKey : getWatchKey(itemOrKey);
+      if (!key) return;
+      const entry = wl.items[key];
+      if (!entry) return;
+      const index = wl.order.indexOf(key);
+      wl.remove(key);
+      showToast(`Removed “${entry.title}”`, {
+        label: "Undo",
+        onClick: () => watchlistRef.current.restore(entry, index),
+      });
+    },
+    [showToast],
+  );
+
+  const removeSavedMany = useCallback(
+    (keys) => {
+      const wl = watchlistRef.current;
+      const snapshot = (keys || [])
+        .map((key) => ({
+          key,
+          entry: wl.items[key],
+          index: wl.order.indexOf(key),
+        }))
+        .filter((item) => item.entry && item.index >= 0)
+        .sort((a, b) => a.index - b.index);
+      if (snapshot.length === 0) return;
+      wl.removeMany(snapshot.map((item) => item.key));
+      showToast(
+        `Removed ${snapshot.length} title${snapshot.length === 1 ? "" : "s"}`,
+        {
+          label: "Undo",
+          onClick: () =>
+            snapshot.forEach(({ entry, index }) =>
+              watchlistRef.current.restore(entry, index),
+            ),
+        },
+      );
+    },
+    [showToast],
+  );
+
+  const isSaved = useCallback((item) => {
+    const key = getWatchKey(item);
+    return !!(key && watchlistRef.current.items[key]);
+  }, []);
+
+  const bulkUpdateSaved = useCallback((keys, patch) => {
+    watchlistRef.current.updateMany(keys, patch);
+  }, []);
 
   const addHistory = useCallback((item) => {
     // Respect the "disable watch history" setting
@@ -950,32 +1236,6 @@ export default function App() {
     [historyWithKeys, progress, watched],
   );
 
-  // Memoized, avoids re-mapping on every download-progress event
-  const savedList = useMemo(() => {
-    const orderedKeys = savedOrder
-      ? savedOrder.filter((k) => saved[k])
-      : Object.keys(saved);
-    const list = orderedKeys.map((k) => saved[k]).filter(Boolean);
-    if (librarySort === "title")
-      return [...list].sort((a, b) =>
-        (a.title || "").localeCompare(b.title || ""),
-      );
-    if (librarySort === "rating")
-      return [...list].sort(
-        (a, b) => (b.vote_average || 0) - (a.vote_average || 0),
-      );
-    if (librarySort === "year")
-      return [...list].sort((a, b) =>
-        (b.year || "").localeCompare(a.year || ""),
-      );
-    return list;
-  }, [saved, savedOrder, librarySort]);
-
-  const handleReorderSaved = useCallback((newOrder) => {
-    setSavedOrder(newOrder);
-    storage.set("savedOrder", newOrder);
-  }, []);
-
   // Stable handler
   const handleGoToDownloads = useCallback(
     (id) => {
@@ -998,14 +1258,11 @@ export default function App() {
         <Sidebar
           page={page}
           onNavigate={navigate}
-          onSearch={() => setShowSearch(true)}
-          savedList={savedList}
+          onSearch={openSearch}
           activeDownloads={activeDownloadCount}
-          onReorderSaved={handleReorderSaved}
-          onRemoveSaved={toggleSave}
           canGoBack={navStack.length > 0}
           onBack={navigateBack}
-          onShowShortcuts={() => setShowShortcuts(true)}
+          onShowShortcuts={openShortcuts}
         />
 
         <div className="main">
@@ -1067,6 +1324,9 @@ export default function App() {
                 onMarkUnwatched={markUnwatched}
                 history={history}
                 apiKey={apiKey}
+                savedEntries={savedEntries}
+                isSaved={isSaved}
+                onToggleSave={toggleSave}
               />
             )}
             {page === "movie" && selected && (
@@ -1090,6 +1350,11 @@ export default function App() {
                 downloads={downloads}
                 onGoToDownloads={handleGoToDownloads}
                 onSelect={handleSelectResult}
+                isSavedItem={isSaved}
+                onToggleSaveItem={toggleSave}
+                onAddSaga={addItemsSmart}
+                onOpenPlaylist={openPlaylist}
+                onOpenPerson={openPerson}
               />
             )}
             {page === "tv" && selected && (
@@ -1113,19 +1378,54 @@ export default function App() {
                 downloads={downloads}
                 onGoToDownloads={handleGoToDownloads}
                 onEpisodeChange={setWatchingEpisode}
+                onSelect={handleSelectResult}
+                isSavedItem={isSaved}
+                onToggleSaveItem={toggleSave}
+                onOpenPerson={openPerson}
               />
             )}
             {page === "history" && (
               <LibraryPage
+                watchlist={watchlist.state}
+                librarySort={librarySort}
                 history={history}
                 inProgress={inProgress}
-                saved={savedList}
                 progress={progress}
                 onSelect={handleSelectResult}
                 watched={watched}
                 onMarkWatched={markWatched}
                 onMarkUnwatched={markUnwatched}
                 onRemoveHistory={removeHistory}
+                onRemove={removeSavedWithUndo}
+                onRemoveMany={removeSavedMany}
+                onUpdate={watchlist.update}
+                onUpdateMany={bulkUpdateSaved}
+                onReorder={watchlist.reorder}
+                apiKey={apiKey}
+                focusCollection={selected?.collection || null}
+                isSaved={isSaved}
+                onToggleSave={toggleSave}
+                onAddMany={addItemsSmart}
+                onOrganize={organizeLibrary}
+                organizing={organizing}
+                organizeProgress={organizeProgress}
+                onOpenPlaylist={openPlaylist}
+              />
+            )}
+            {page === "playlists" && (
+              <PlaylistsPage
+                apiKey={apiKey}
+                taste={taste}
+                watchlist={watchlist.state}
+                onSelect={handleSelectResult}
+              />
+            )}
+            {page === "person" && selected && (
+              <PersonPage
+                person={selected}
+                apiKey={apiKey}
+                onBack={navigateBack}
+                onSelect={handleSelectResult}
               />
             )}
             {page === "settings" && (
@@ -1163,14 +1463,20 @@ export default function App() {
           </Suspense>
         </div>
 
-        {showSearch && (
-          <SearchModal
-            apiKey={apiKey}
-            onSelect={handleSelectResult}
-            onClose={() => setShowSearch(false)}
-            offline={offline}
-          />
-        )}
+        <Suspense fallback={null}>
+          {showSearch && (
+            <SearchModal
+              apiKey={apiKey}
+              onSelect={handleSelectResult}
+              onClose={() => setShowSearch(false)}
+              offline={offline}
+              taste={taste}
+              isSaved={isSaved}
+              onToggleSave={toggleSave}
+              onAddMany={addItemsSmart}
+            />
+          )}
+        </Suspense>
         {updateBanner && (
           <div
             style={{
@@ -1192,7 +1498,7 @@ export default function App() {
               color: "#fff",
             }}
           >
-            <span>🎉 Streambert v{updateBanner.latest} is available!</span>
+            <span>🎉 Gigi v{updateBanner.latest} is available!</span>
             <button
               onClick={() => setShowUpdateModal(true)}
               style={{
@@ -1225,14 +1531,31 @@ export default function App() {
             </button>
           </div>
         )}
-        {showUpdateModal && updateBanner && (
-          <UpdateModal
-            updateInfo={updateBanner}
-            activeDownloads={activeDownloadCount}
-            onClose={() => setShowUpdateModal(false)}
-          />
+        <Suspense fallback={null}>
+          {showUpdateModal && updateBanner && (
+            <UpdateModal
+              updateInfo={updateBanner}
+              activeDownloads={activeDownloadCount}
+              onClose={() => setShowUpdateModal(false)}
+            />
+          )}
+        </Suspense>
+        {toast && (
+          <div className="toast">
+            <span>{typeof toast === "string" ? toast : toast.message}</span>
+            {typeof toast === "object" && toast.action && (
+              <button
+                className="toast-action"
+                onClick={() => {
+                  toast.action.onClick?.();
+                  setToast(null);
+                }}
+              >
+                {toast.action.label}
+              </button>
+            )}
+          </div>
         )}
-        {toast && <div className="toast">{toast}</div>}
 
         {/* ── Episode check status pill / result card ── */}
         {episodeCheckStatus && (
@@ -1432,9 +1755,21 @@ export default function App() {
             }}
           />
         )}
-        {showShortcuts && (
-          <KeyboardShortcutsModal onClose={() => setShowShortcuts(false)} />
-        )}
+        <Suspense fallback={null}>
+          {showCommandPalette && (
+            <CommandPalette
+              onClose={() => setShowCommandPalette(false)}
+              onNavigate={navigate}
+              onSearch={openSearch}
+              onShowShortcuts={openShortcuts}
+            />
+          )}
+        </Suspense>
+        <Suspense fallback={null}>
+          {showShortcuts && (
+            <KeyboardShortcutsModal onClose={() => setShowShortcuts(false)} />
+          )}
+        </Suspense>
       </div>
     </ErrorBoundary>
   );

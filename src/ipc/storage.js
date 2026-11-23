@@ -199,7 +199,7 @@ function register() {
     }
   });
 
-  ipcMain.handle("perform-scheduled-backup", (_, { data, settings }) => {
+  ipcMain.handle("perform-scheduled-backup", (_, { data, backup, settings }) => {
     try {
       const backupDir = settings.path;
       if (!backupDir) return { ok: false, error: "No backup path set" };
@@ -212,17 +212,17 @@ function register() {
         .toISOString()
         .replace(/[:.]/g, "-")
         .slice(0, 19);
-      const filename = `streambert-backup-${timestamp}.json`;
+      const filename = `gigi-backup-${timestamp}.json`;
       const fullPath = path.join(resolvedDir, filename);
+      const payload = backup || {
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        data,
+      };
       fs.writeFileSync(
         fullPath,
         JSON.stringify(
-          {
-            version: 1,
-            exportedAt: new Date().toISOString(),
-            scheduledBackup: true,
-            data,
-          },
+          { ...payload, scheduledBackup: true },
           null,
           2,
         ),
@@ -233,7 +233,10 @@ function register() {
       const keepCount = Math.max(1, Number(settings.keepCount) || 5);
       fs.readdirSync(resolvedDir)
         .filter(
-          (f) => f.startsWith("streambert-backup-") && f.endsWith(".json"),
+          (f) =>
+            (f.startsWith("gigi-backup-") ||
+              f.startsWith("streambert-backup-")) &&
+            f.endsWith(".json"),
         )
         .map((f) => ({
           name: f,

@@ -7,6 +7,8 @@ import {
   WatchedIcon,
   RatingShieldIcon,
   RatingLockIcon,
+  BookmarkIcon,
+  BookmarkFillIcon,
 } from "./Icons";
 
 const MediaCard = memo(function MediaCard({
@@ -18,6 +20,12 @@ const MediaCard = memo(function MediaCard({
   onMarkUnwatched,
   ageRating,
   restricted,
+  isSaved = false,
+  onToggleSave,
+  onEdit,
+  selectable = false,
+  selected = false,
+  onToggleSelect,
 }) {
   const title = item.title || item.name;
   const year = (item.release_date || item.first_air_date || "").slice(0, 4);
@@ -45,15 +53,16 @@ const MediaCard = memo(function MediaCard({
 
   // For TV series cards without a specific episode, watched marking is disabled
   const canMarkWatched = !isTV || (item.season != null && item.episode != null);
+  const hasMenu = canMarkWatched || !!onToggleSave || !!onEdit;
 
   const openMenu = useCallback(
     (e) => {
-      if (!canMarkWatched) return; // no context menu for whole series
+      if (!hasMenu) return;
       e.preventDefault();
       e.stopPropagation();
       setMenu({ x: e.clientX, y: e.clientY });
     },
-    [canMarkWatched],
+    [hasMenu],
   );
 
   useEffect(() => {
@@ -77,20 +86,37 @@ const MediaCard = memo(function MediaCard({
     onMarkUnwatched?.(watchedKey);
     setMenu(null);
   };
+  const handleToggleSave = (e) => {
+    e.stopPropagation();
+    onToggleSave?.(item);
+    setMenu(null);
+  };
+  const handleEdit = (e) => {
+    e.stopPropagation();
+    onEdit?.(item);
+    setMenu(null);
+  };
+  const handleSelect = (e) => {
+    e.stopPropagation();
+    onToggleSelect?.(item);
+  };
 
   return (
     <>
       <div
-        className={`card${isWatched ? " ep-watched" : ""}${isUnreleased ? " card--unreleased" : ""}`}
+        className={`card${isWatched ? " ep-watched" : ""}${isUnreleased ? " card--unreleased" : ""}${selected ? " card--selected" : ""}`}
         onClick={onClick}
         onContextMenu={isUnreleased ? undefined : openMenu}
       >
-        <div className="card-poster">
+        <div
+          className={`card-poster${selectable ? " card-poster--selectable" : ""}`}
+        >
           {item.poster_path ? (
             <img
               src={imgUrl(item.poster_path, "w342")}
               alt={title}
               loading="lazy"
+              decoding="async"
             />
           ) : (
             <div className="no-poster">
@@ -111,6 +137,30 @@ const MediaCard = memo(function MediaCard({
               )}
               {ageRating}
             </div>
+          )}
+
+          {selectable && (
+            <button
+              className={`card-select${selected ? " selected" : ""}`}
+              onClick={handleSelect}
+              aria-label={selected ? "Deselect title" : "Select title"}
+              title={selected ? "Deselect" : "Select"}
+            >
+              {selected ? "✓" : ""}
+            </button>
+          )}
+
+          {onToggleSave && (
+            <button
+              className={`card-save${isSaved ? " is-saved" : ""}`}
+              onClick={handleToggleSave}
+              aria-label={
+                isSaved ? "Remove from watchlist" : "Add to watchlist"
+              }
+              title={isSaved ? "Remove from watchlist" : "Add to watchlist"}
+            >
+              {isSaved ? <BookmarkFillIcon /> : <BookmarkIcon />}
+            </button>
           )}
 
           <div className="card-overlay">
@@ -162,13 +212,27 @@ const MediaCard = memo(function MediaCard({
           style={{ top: menu.y, left: menu.x }}
           onClick={(e) => e.stopPropagation()}
         >
-          {isWatched ? (
-            <button className="context-menu-item" onClick={handleMarkUnwatched}>
-              ↩ Mark as Unwatched
+          {canMarkWatched &&
+            (isWatched ? (
+              <button
+                className="context-menu-item"
+                onClick={handleMarkUnwatched}
+              >
+                ↩ Mark as Unwatched
+              </button>
+            ) : (
+              <button className="context-menu-item" onClick={handleMarkWatched}>
+                ✓ Mark as Watched
+              </button>
+            ))}
+          {onToggleSave && (
+            <button className="context-menu-item" onClick={handleToggleSave}>
+              {isSaved ? "✕ Remove from watchlist" : "+ Add to watchlist"}
             </button>
-          ) : (
-            <button className="context-menu-item" onClick={handleMarkWatched}>
-              ✓ Mark as Watched
+          )}
+          {onEdit && (
+            <button className="context-menu-item" onClick={handleEdit}>
+              ✎ Edit watchlist entry
             </button>
           )}
         </div>

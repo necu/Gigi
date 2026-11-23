@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { CloseIcon, DownloadIcon, SettingsIcon, SubtitlesIcon } from "./Icons";
+import useFocusTrap from "../utils/useFocusTrap";
 import {
   storage,
   STORAGE_KEYS,
@@ -400,6 +401,9 @@ export default function DownloadModal({
   );
   const [subdlApiKey, setSubdlApiKey] = useState("");
   const [wyzieApiKey, setWyzieApiKey] = useState(null); // null = not yet loaded
+  const dialogRef = useRef(null);
+
+  useFocusTrap(dialogRef, { onEscape: onClose });
 
   useEffect(() => {
     let mounted = true;
@@ -619,7 +623,14 @@ export default function DownloadModal({
   if (!downloadPath || settingPath) {
     return (
       <div className="modal-backdrop" onClick={onClose}>
-        <div className="download-modal" onClick={(e) => e.stopPropagation()}>
+        <div
+          ref={dialogRef}
+          className="download-modal"
+          role="dialog"
+          aria-modal="true"
+          tabIndex={-1}
+          onClick={(e) => e.stopPropagation()}
+        >
           <div className="download-modal-header">
             <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <DownloadIcon /> Set Download Folder
@@ -719,7 +730,14 @@ export default function DownloadModal({
   return (
     <>
       <div className="modal-backdrop" onClick={onClose}>
-        <div className="download-modal" onClick={(e) => e.stopPropagation()}>
+        <div
+          ref={dialogRef}
+          className="download-modal"
+          role="dialog"
+          aria-modal="true"
+          tabIndex={-1}
+          onClick={(e) => e.stopPropagation()}
+        >
           <div className="download-modal-header">
             <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <DownloadIcon /> Download

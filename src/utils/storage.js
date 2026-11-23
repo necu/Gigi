@@ -75,6 +75,7 @@ export const STORAGE_KEYS = {
   COMPACT_MODE: "compactMode",
   REDUCE_ANIMATIONS: "reduceAnimations",
   LIBRARY_SORT: "librarySort",
+  LIBRARY_VIEWS: "libraryViews",
   HISTORY_ENABLED: "historyEnabled",
   // Notification preferences
   NOTIFY_DOWNLOAD_COMPLETE: "notifyDownloadComplete",
@@ -196,6 +197,8 @@ export async function clearAppCaches() {
   localStorage.removeItem("streambert_anilistCache");
   localStorage.removeItem("streambert_episodeGroupCache");
   localStorage.removeItem("streambert_aniskipCache");
+  localStorage.removeItem("streambert_homeFeedCache");
+  localStorage.removeItem("streambert_homeRecommendationCache");
   for (const key of Object.keys(localStorage)) {
     if (key.startsWith("dlDur_")) localStorage.removeItem(key);
   }

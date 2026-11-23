@@ -1,7 +1,7 @@
-export const StreambertLogo = ({ style }) => (
+export const GigiLogo = ({ style }) => (
   <img
     src="./logo.svg"
-    alt="Streambert"
+    alt="Gigi"
     width="44"
     height="44"
     style={{ width: "100%", height: "100%", display: "block", ...style }}
@@ -19,6 +19,19 @@ export const HistoryIcon = () => (
     <path d="M12 8v4l3 3" />
     <path d="M3.05 11a9 9 0 1 1 .5 4" />
     <path d="M3 3v5h5" />
+  </svg>
+);
+export const PlaylistIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M4 6h16M4 12h9M4 18h7" />
+    <path d="m17 14 4 3-4 3z" fill="currentColor" stroke="none" />
   </svg>
 );
 export const BookmarkIcon = () => (
