@@ -2,7 +2,7 @@
 
 ### A fast, private desktop app for movies, TV series and anime.
 
-Gigi brings discovery, streaming, downloads, subtitles and a personal library into one focused desktop experience. It is built with Electron, React and SQLite — no account, no ads and no central tracking service.
+Gigi brings discovery, streaming, downloads, subtitles and a personal library into one focused desktop experience. It is built with Electron, React and SQLite — no Gigi account, no ads and no central tracking service.
 
 [![Version](https://img.shields.io/badge/version-2.8.0-e50914?style=flat-square)](#whats-new)
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square)](LICENSE)
