@@ -76,6 +76,9 @@ export const STORAGE_KEYS = {
   REDUCE_ANIMATIONS: "reduceAnimations",
   LIBRARY_SORT: "librarySort",
   LIBRARY_VIEWS: "libraryViews",
+  APP_LANGUAGE: "appLanguage",
+  LIBRARY_SECTION_ORDER: "librarySectionOrder",
+  CAROUSEL_PAUSED: "carouselPaused",
   HISTORY_ENABLED: "historyEnabled",
   // Notification preferences
   NOTIFY_DOWNLOAD_COMPLETE: "notifyDownloadComplete",

@@ -3,6 +3,7 @@
 // localStorage and are included in backups.
 
 import { storage } from "./storage";
+import { normalizeVibeFilters } from "./vibeTags";
 
 export const LIBRARY_VIEWS_STORAGE_KEY = "libraryViews";
 export const MAX_CUSTOM_VIEWS = 24;
@@ -12,6 +13,7 @@ const filterDefaults = {
   typeTab: "all",
   statusFilter: "all",
   tagFilter: null,
+  vibeFilters: {},
   collectionFilter: "",
   sort: "",
   dir: "",
@@ -66,6 +68,7 @@ export function normalizeLibraryFilters(filters = {}) {
       ? filters.statusFilter
       : "all",
     tagFilter: tag,
+    vibeFilters: normalizeVibeFilters(filters.vibeFilters),
     collectionFilter: normalizeText(filters.collectionFilter).slice(0, 160),
     sort: normalizeText(filters.sort).slice(0, 40),
     dir: filters.dir === "desc" ? "desc" : filters.dir === "asc" ? "asc" : "",

@@ -8,13 +8,14 @@
 import { tmdbFetch } from "./api";
 import { getWatchKey } from "./watchlist";
 import { mergeSmartPatch, smartPatchFor } from "./autoCategorize";
+import { hasVibeContext } from "./vibeTags";
 
 const CONCURRENCY = 3;
 
 export async function organizeEntries({
   entries,
   apiKey,
-  limit = 40,
+  limit = 1000,
   onProgress,
 }) {
   if (!apiKey) return { patches: [], scanned: 0, changed: 0, failed: 0 };
@@ -23,8 +24,10 @@ export async function organizeEntries({
     .filter((entry) => entry?.id)
     .filter((entry) => {
       const tags = entry.tags || [];
-      const collections = entry.collections || [];
-      return collections.length === 0 || tags.length < 4;
+      // Every library title must end up with at least two vibe tags. The
+      // organiser is also the migration path for libraries saved by versions
+      // that only knew genres and directors.
+      return !hasVibeContext(entry) || tags.length < 4;
     })
     .slice(0, limit);
 
@@ -67,6 +70,11 @@ export async function organizeEntries({
 
       done += 1;
       onProgress?.({ done, total: targets.length });
+      // Keep the TMDB queue polite on a large library. This also leaves the
+      // renderer responsive while tags stream in.
+      if (cursor < targets.length) {
+        await new Promise((resolve) => setTimeout(resolve, 70));
+      }
     }
   }
 

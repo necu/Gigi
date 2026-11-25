@@ -37,6 +37,17 @@ import {
 } from "../utils/backup";
 import { formatBytes } from "../utils/storage";
 import { watchlistDb } from "../utils/watchlistDb";
+import {
+  loadPlayerPreferences,
+  savePlayerPreferences,
+  getIntroSkipMode,
+} from "../utils/playerPreferences";
+import {
+  APP_LANGUAGES,
+  setAppLanguage,
+  useAppLanguage,
+  useT,
+} from "../utils/i18n";
 
 // ── Custom Select ─────────────────────────────────────────────────────────────
 function SettingsSelect({ value, onChange, options, style }) {
@@ -530,6 +541,72 @@ function CleanRow({
         >
           {busy ? "Working…" : buttonLabel}
         </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Language Section ──────────────────────────────────────────────────────────
+function LanguageSection() {
+  const t = useT();
+  const language = useAppLanguage();
+
+  return (
+    <div style={{ marginBottom: 40 }}>
+      <div className="settings-section-title">{t("settings.language")}</div>
+      <div
+        style={{
+          fontSize: 13,
+          color: "var(--text3)",
+          marginBottom: 16,
+          lineHeight: 1.6,
+        }}
+      >
+        {t("settings.languageDesc")}
+      </div>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        {APP_LANGUAGES.map((option) => {
+          const active = language === option.id;
+          return (
+            <button
+              key={option.id}
+              type="button"
+              onClick={() => setAppLanguage(option.id)}
+              aria-pressed={active}
+              style={{
+                minWidth: 150,
+                padding: "12px 16px",
+                borderRadius: 10,
+                border: `1.5px solid ${active ? "var(--red)" : "var(--border)"}`,
+                background: active
+                  ? "color-mix(in srgb, var(--red) 14%, var(--surface2))"
+                  : "var(--surface2)",
+                color: active ? "var(--text)" : "var(--text2)",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 18,
+                font: "inherit",
+                fontSize: 14,
+                fontWeight: active ? 700 : 500,
+                transition: "border-color 0.15s, background 0.15s",
+              }}
+            >
+              <span>{option.label}</span>
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 800,
+                  letterSpacing: 0.6,
+                  color: active ? "var(--red)" : "var(--text3)",
+                }}
+              >
+                {option.short}
+              </span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -1448,6 +1525,7 @@ function BackupRestoreSection({ onRestored }) {
 // ── Start Page Section ────────────────────────────────────────────────────────
 // ── Appearance Section ────────────────────────────────────────────────────────
 function AppearanceSection() {
+  const t = useT();
   const [accent, setAccent] = useState(
     () => storage.get(STORAGE_KEYS.ACCENT_COLOR) || "red",
   );
@@ -1555,7 +1633,7 @@ function AppearanceSection() {
 
   return (
     <div style={{ marginBottom: 40 }}>
-      <div className="settings-section-title">Appearance</div>
+      <div className="settings-section-title">{t("settings.appearance")}</div>
 
       {/* Theme */}
       <div style={{ marginBottom: 24 }}>
@@ -1567,7 +1645,7 @@ function AppearanceSection() {
             marginBottom: 10,
           }}
         >
-          Theme
+          {t("settings.theme")}
         </div>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           {THEME_PRESETS.map((t) => (
@@ -1637,7 +1715,7 @@ function AppearanceSection() {
             className="btn btn-ghost"
             style={{ fontSize: 12, padding: "5px 12px", marginBottom: 12 }}
           >
-            {showCustomEditor ? "▲ Hide" : "▼ Edit"} custom colours
+            {showCustomEditor ? "▲" : "▼"} {t("settings.customColours")}
           </button>
           {showCustomEditor && (
             <div
@@ -1711,7 +1789,7 @@ function AppearanceSection() {
                     applyTheme("custom", DEFAULT_CUSTOM_VARS);
                   }}
                 >
-                  Reset to defaults
+                  {t("settings.resetDefaults")}
                 </button>
               </div>
             </div>
@@ -1729,7 +1807,7 @@ function AppearanceSection() {
             marginBottom: 10,
           }}
         >
-          Accent Colour
+          {t("settings.accent")}
         </div>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           {ACCENT_PRESETS.map((p) => (
@@ -1760,8 +1838,8 @@ function AppearanceSection() {
           ))}
         </div>
         <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 8 }}>
-          {ACCENT_PRESETS.find((p) => p.id === accent)?.label}, applied to
-          buttons, highlights, and indicators.
+          {ACCENT_PRESETS.find((p) => p.id === accent)?.label} ·{" "}
+          {t("settings.accentDesc")}
         </div>
         {/* Accent in streaming player */}
         <div
@@ -1777,11 +1855,10 @@ function AppearanceSection() {
             <div
               style={{ fontSize: 14, fontWeight: 500, color: "var(--text)" }}
             >
-              Apply accent colour to streaming player
+              {t("settings.accentInPlayer")}
             </div>
             <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>
-              Passes the selected accent colour to the player source (Videasy,
-              Vidking). VidSrc does not support colour theming.
+              {t("settings.accentPlayerDesc")}
             </div>
           </div>
         </div>
@@ -1797,13 +1874,13 @@ function AppearanceSection() {
             marginBottom: 10,
           }}
         >
-          Font Size
+          {t("settings.fontSize")}
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           {[
-            { id: "sm", label: "Small" },
-            { id: "normal", label: "Normal" },
-            { id: "lg", label: "Large" },
+            { id: "sm", label: t("settings.small") },
+            { id: "normal", label: t("settings.normal") },
+            { id: "lg", label: t("settings.large") },
           ].map((o) => (
             <button
               key={o.id}
@@ -1837,10 +1914,10 @@ function AppearanceSection() {
             <div
               style={{ fontSize: 14, fontWeight: 500, color: "var(--text)" }}
             >
-              Compact card grid
+              {t("settings.compactGrid")}
             </div>
             <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>
-              Shows more titles per row by reducing card size.
+              {t("settings.compactGridDesc")}
             </div>
           </div>
         </div>
@@ -1850,10 +1927,10 @@ function AppearanceSection() {
             <div
               style={{ fontSize: 14, fontWeight: 500, color: "var(--text)" }}
             >
-              Reduce animations
+              {t("settings.reduceAnimations")}
             </div>
             <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>
-              Disables transitions and hover effects throughout the app.
+              {t("settings.reduceAnimationsDesc")}
             </div>
           </div>
         </div>
@@ -1863,12 +1940,10 @@ function AppearanceSection() {
             <div
               style={{ fontSize: 14, fontWeight: 500, color: "var(--text)" }}
             >
-              Controller support
+              {t("settings.controller")}
             </div>
             <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>
-              Navigate menus with a D-pad/stick and use A/B to select and go
-              back. In the player: A play/pause, D-pad seek/volume, LB/RB
-              skip ±15s, Y fullscreen, B exit.
+              {t("settings.controllerDesc")}
             </div>
           </div>
         </div>
@@ -1876,10 +1951,12 @@ function AppearanceSection() {
 
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <button className="btn btn-primary" onClick={handleSave}>
-          Save
+          {t("common.save")}
         </button>
         {saved && (
-          <span style={{ fontSize: 13, color: "#48c774" }}>✓ Saved</span>
+          <span style={{ fontSize: 13, color: "#48c774" }}>
+            ✓ {t("settings.saved")}
+          </span>
         )}
       </div>
     </div>
@@ -2920,6 +2997,7 @@ const SECTION_NAV = [
 ];
 
 function SettingsTopBar({ sectionRefs, contentRef }) {
+  const t = useT();
   const [searchOpen, setSearchOpen] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -3198,7 +3276,7 @@ function SettingsTopBar({ sectionRefs, contentRef }) {
                 ref={inputRef}
                 value={query}
                 onChange={handleQueryChange}
-                placeholder="Search on this page…"
+                placeholder={t("settings.searchPage")}
                 style={{
                   flex: 1,
                   background: "transparent",
@@ -3434,7 +3512,7 @@ function SettingsTopBar({ sectionRefs, contentRef }) {
               <circle cx="3" cy="12" r="1" fill="currentColor" />
               <circle cx="3" cy="18" r="1" fill="currentColor" />
             </svg>
-            Jump to Section
+            {t("settings.jump")}
             <svg
               width="12"
               height="12"
@@ -3506,7 +3584,7 @@ function SettingsTopBar({ sectionRefs, contentRef }) {
                   >
                     {s.icon}
                   </span>
-                  <span style={{ flex: 1 }}>{s.label}</span>
+                  <span style={{ flex: 1 }}>{t(`settings.section.${s.id}`)}</span>
                   <svg
                     width="12"
                     height="12"
@@ -3534,6 +3612,7 @@ export default function SettingsPage({
   onChangeApiKey,
   initialSection,
 }) {
+  const t = useT();
   const [downloadPath, setDownloadPath] = useState(
     () => storage.get(STORAGE_KEYS.DOWNLOAD_PATH) || "",
   );
@@ -3541,8 +3620,13 @@ export default function SettingsPage({
     () => storage.get(STORAGE_KEYS.WATCHED_THRESHOLD) ?? 20,
   );
   const [introSkipMode, setIntroSkipMode] = useState(
-    () => storage.get(STORAGE_KEYS.INTRO_SKIP_MODE) || "off",
+    () => getIntroSkipMode(),
   );
+  const [playerPrefs, setPlayerPrefs] = useState(loadPlayerPreferences);
+  const updatePlayerPrefs = (patch) => {
+    setPlayerPrefs(savePlayerPreferences(patch));
+    flash();
+  };
   const [autoplayNextEnabled, setAutoplayNextEnabled] = useState(
     () => storage.get(STORAGE_KEYS.AUTOPLAY_NEXT_ENABLED) ?? true,
   );
@@ -3825,10 +3909,10 @@ export default function SettingsPage({
             marginBottom: 6,
           }}
         >
-          SETTINGS
+          {t("settings.title")}
         </div>
         <div style={{ color: "var(--text3)", fontSize: 14, marginBottom: 48 }}>
-          App configuration for Gigi
+          {t("settings.subtitle")}
         </div>
 
         {/* ══════════════════════════════════════════════════════════════════ */}
@@ -3836,9 +3920,14 @@ export default function SettingsPage({
         {/* ══════════════════════════════════════════════════════════════════ */}
         <div ref={secUpdates} style={{ scrollMarginTop: 80 }}>
           <SectionGroupHeader
-            title="General"
-            subtitle="App version, updates, API credentials and Languages"
+            title={t("settings.general")}
+            subtitle={t("settings.generalSub")}
           />
+
+          {/* Language */}
+          <LanguageSection />
+
+          <Divider />
 
           {/* Version & Updates */}
           <VersionSection />
@@ -3968,6 +4057,117 @@ export default function SettingsPage({
                     ✓ Saved
                   </span>
                 )}
+              </div>
+            </div>
+          </div>
+
+          <Divider />
+
+          {/* Player Controls */}
+          <div style={{ marginBottom: 40 }}>
+            <div className="settings-section-title">Player Controls</div>
+            <div
+              style={{
+                fontSize: 13,
+                color: "var(--text3)",
+                marginBottom: 18,
+                lineHeight: 1.6,
+              }}
+            >
+              Tune the centre transport. Holding rewind or forward repeats the
+              jump at this interval; every value is saved immediately.
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 16 }}>
+                  <span style={{ fontSize: 14, fontWeight: 500 }}>
+                    Seek step
+                  </span>
+                  <span style={{ fontSize: 13, color: "var(--text3)" }}>
+                    {playerPrefs.seekStep}s
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={5}
+                  max={60}
+                  step={5}
+                  value={playerPrefs.seekStep}
+                  onChange={(e) =>
+                    updatePlayerPrefs({ seekStep: Number(e.target.value) })
+                  }
+                  style={{ width: "100%", accentColor: "var(--red)" }}
+                />
+              </div>
+
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 16 }}>
+                  <span style={{ fontSize: 14, fontWeight: 500 }}>
+                    Hold repeat interval
+                  </span>
+                  <span style={{ fontSize: 13, color: "var(--text3)" }}>
+                    {(playerPrefs.holdInterval / 1000).toFixed(2)}s
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={100}
+                  max={600}
+                  step={50}
+                  value={playerPrefs.holdInterval}
+                  onChange={(e) =>
+                    updatePlayerPrefs({ holdInterval: Number(e.target.value) })
+                  }
+                  style={{ width: "100%", accentColor: "var(--red)" }}
+                />
+                <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 4 }}>
+                  Default: 10 seconds every 0.2 seconds. Lower is faster.
+                </div>
+              </div>
+
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 16 }}>
+                  <span style={{ fontSize: 14, fontWeight: 500 }}>
+                    Estimated intro length
+                  </span>
+                  <span style={{ fontSize: 13, color: "var(--text3)" }}>
+                    {playerPrefs.genericIntroSeconds}s
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={20}
+                  max={240}
+                  step={5}
+                  value={playerPrefs.genericIntroSeconds}
+                  onChange={(e) =>
+                    updatePlayerPrefs({
+                      genericIntroSeconds: Number(e.target.value),
+                    })
+                  }
+                  style={{ width: "100%", accentColor: "var(--red)" }}
+                />
+                <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 4 }}>
+                  Used for series without AniSkip data. The first manual skip is
+                  remembered per series.
+                </div>
+              </div>
+
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <Toggle
+                  value={playerPrefs.smartIntro}
+                  onChange={(val) => updatePlayerPrefs({ smartIntro: val })}
+                />
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 500 }}>
+                    Estimated intro for every series
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>
+                    Show a skip button even when AniSkip has no timing for the
+                    episode.
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -4297,12 +4497,9 @@ export default function SettingsPage({
               <span style={{ color: "var(--text)", fontWeight: 600 }}>
                 AniSkip
               </span>{" "}
-              to detect and skip opening/ending segments. Only active for animes
-              and when using{" "}
-              <span style={{ color: "var(--text)", fontWeight: 600 }}>
-                HiAnime
-              </span>{" "}
-              as source.
+              to detect and skip opening/ending segments in anime. Other series
+              get a learned intro estimate, and every title keeps the five-second
+              hover halo plus the five-second undo pill.
             </div>
             <div
               style={{
@@ -4334,6 +4531,9 @@ export default function SettingsPage({
                   onClick={() => {
                     setIntroSkipMode(value);
                     storage.set(STORAGE_KEYS.INTRO_SKIP_MODE, value);
+                    window.dispatchEvent(
+                      new CustomEvent("streambert:player-settings-changed"),
+                    );
                   }}
                   style={{
                     display: "flex",
@@ -4502,8 +4702,8 @@ export default function SettingsPage({
         {/* ══════════════════════════════════════════════════════════════════ */}
         <div ref={secInterface} style={{ scrollMarginTop: 80 }}>
           <SectionGroupHeader
-            title="Interface"
-            subtitle="Home layout, start page, appearance, and display options"
+            title={t("settings.interface")}
+            subtitle={t("settings.interfaceSub")}
           />
           <HomeLayoutSection />
           <Divider />
@@ -4517,8 +4717,8 @@ export default function SettingsPage({
         {/* ══════════════════════════════════════════════════════════════════ */}
         <div ref={secLibrary} style={{ scrollMarginTop: 80 }}>
           <SectionGroupHeader
-            title="Library"
-            subtitle="Watchlist sort order and watch history preferences"
+            title={t("settings.library")}
+            subtitle={t("settings.librarySub")}
           />
           <LibraryPrivacySection />
         </div>
@@ -4528,8 +4728,8 @@ export default function SettingsPage({
         {/* ══════════════════════════════════════════════════════════════════ */}
         <div ref={secBackup} style={{ scrollMarginTop: 80 }}>
           <SectionGroupHeader
-            title="Backup & Restore"
-            subtitle="Export your data or restore from a previous backup file"
+            title={t("settings.backup")}
+            subtitle={t("settings.backupSub")}
           />
           <BackupRestoreSection />
           <LibraryMaintenanceSection />
@@ -4540,7 +4740,7 @@ export default function SettingsPage({
         {/* ══════════════════════════════════════════════════════════════════ */}
         <div ref={secStorage} style={{ scrollMarginTop: 80 }}>
           <SectionGroupHeader
-            title="Storage & Data"
+            title={t("settings.storage")}
             subtitle="Clear cache, watch progress, downloads, or reset the entire app"
           />
 

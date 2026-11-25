@@ -6,6 +6,8 @@
 // Everything here is pure: callers merge the result into an existing entry so
 // hand-written tags and collections are never lost.
 
+import { deriveVibeTags } from "./vibeTags";
+
 export const GENRE_NAMES = {
   28: "Action",
   12: "Adventure",
@@ -153,13 +155,18 @@ export function smartPatchFor(item, details, type) {
     tags.push(LANGUAGE_NAMES[language]);
   }
 
+  // Feeling and context tags let the library answer "what do I want to feel
+  // tonight?" instead of only "which genre is this?". They are merged with
+  // the factual tags, so existing manual tags remain untouched.
+  tags.push(...deriveVibeTags(source));
+
   const collections = [];
   const collection =
     source.belongs_to_collection || item?.belongs_to_collection;
   if (collection?.name) collections.push(collection.name);
 
   return {
-    tags: uniq(tags).slice(0, 7),
+    tags: uniq(tags).slice(0, 24),
     collections: uniq(collections),
   };
 }
@@ -172,7 +179,7 @@ export function mergeSmartPatch(entry, patch) {
     ...(patch?.collections || []),
   ]);
   return {
-    tags: tags.slice(0, 14),
+    tags: tags.slice(0, 28),
     collections,
   };
 }

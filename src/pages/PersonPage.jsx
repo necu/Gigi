@@ -10,41 +10,71 @@ import {
   normalizePersonCredits,
 } from "../utils/people";
 
-function PersonCreditCard({ credit, onSelect, knownFor = false }) {
+function PersonCreditCard({
+  credit,
+  onSelect,
+  knownFor = false,
+  saved = false,
+  onToggleSave,
+}) {
   const title = creditLabel(credit) || "Untitled";
   const roles = credit.roles?.filter(Boolean) || [];
   const roleLabel = roles.slice(0, 3).join(" · ") || "Crew";
 
   return (
-    <button
-      type="button"
-      className={`person-credit${knownFor ? " person-credit--known" : ""}`}
-      onClick={() => onSelect?.(credit)}
-      title={`${title}${roleLabel ? ` — ${roleLabel}` : ""}`}
-    >
-      <div className="person-credit__poster">
-        {credit.poster_path ? (
-          <img
-            src={imgUrl(credit.poster_path, "w342")}
-            alt=""
-            loading="lazy"
-            decoding="async"
-          />
-        ) : (
-          <span className="person-credit__placeholder">🎞</span>
-        )}
-        {knownFor && <span className="person-credit__known">Known for</span>}
-      </div>
-      <div className="person-credit__title">{title}</div>
-      <div className="person-credit__meta">{creditMeta(credit)}</div>
-      <div className="person-credit__role" title={roleLabel}>
-        {roleLabel}
-      </div>
-    </button>
+    <div className={`person-credit${knownFor ? " person-credit--known" : ""}`}>
+      <button
+        type="button"
+        className="person-credit__open"
+        onClick={() => onSelect?.(credit)}
+        title={`${title}${roleLabel ? ` — ${roleLabel}` : ""}`}
+      >
+        <div className="person-credit__poster">
+          {credit.poster_path ? (
+            <img
+              src={imgUrl(credit.poster_path, "w342")}
+              alt=""
+              loading="lazy"
+              decoding="async"
+            />
+          ) : (
+            <span className="person-credit__placeholder">🎞</span>
+          )}
+          {knownFor && <span className="person-credit__known">Known for</span>}
+        </div>
+        <div className="person-credit__title">{title}</div>
+        <div className="person-credit__meta">{creditMeta(credit)}</div>
+        <div className="person-credit__role" title={roleLabel}>
+          {roleLabel}
+        </div>
+      </button>
+      {onToggleSave && (
+        <button
+          type="button"
+          className={`person-credit__save${saved ? " is-saved" : ""}`}
+          onClick={() => onToggleSave(credit)}
+          title={saved ? "Remove from library" : "Add to library"}
+          aria-label={
+            saved
+              ? `Remove ${title} from library`
+              : `Add ${title} to library`
+          }
+        >
+          {saved ? "✓" : "+"}
+        </button>
+      )}
+    </div>
   );
 }
 
-export default function PersonPage({ person, apiKey, onBack, onSelect }) {
+export default function PersonPage({
+  person,
+  apiKey,
+  onBack,
+  onSelect,
+  isSaved,
+  onToggleSave,
+}) {
   const [details, setDetails] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -217,6 +247,8 @@ export default function PersonPage({ person, apiKey, onBack, onSelect }) {
                 key={`${credit.media_type}_${credit.id}`}
                 credit={credit}
                 onSelect={onSelect}
+                saved={!!isSaved?.(credit)}
+                onToggleSave={onToggleSave}
                 knownFor
               />
             ))}
@@ -273,6 +305,8 @@ export default function PersonPage({ person, apiKey, onBack, onSelect }) {
                 key={`${credit.media_type}_${credit.id}`}
                 credit={credit}
                 onSelect={onSelect}
+                saved={!!isSaved?.(credit)}
+                onToggleSave={onToggleSave}
               />
             ))}
           </div>

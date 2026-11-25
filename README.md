@@ -5,14 +5,14 @@
 Gigi brings discovery, streaming, downloads, subtitles and a personal library into one focused desktop experience. It is built with Electron, React and SQLite — no Gigi account, no ads and no central tracking service.
 
 <p align="center">
-  <a href="https://github.com/necu/Gigi/releases/latest/download/Gigi-Setup-2.8.0.exe">
-    <img src="https://img.shields.io/badge/Download_for_Windows-Gigi_2.8.0-e50914?style=for-the-badge&logo=windows&logoColor=white" alt="Download Gigi for Windows">
+  <a href="https://github.com/necu/Gigi/releases/latest">
+    <img src="https://img.shields.io/badge/Download_for_Windows-Latest-e50914?style=for-the-badge&logo=windows&logoColor=white" alt="Download Gigi for Windows">
   </a>
   <br>
   <sub>Windows 10/11 · x64 · direct installer</sub>
 </p>
 
-[![Version](https://img.shields.io/badge/version-2.8.0-e50914?style=flat-square)](#whats-new)
+[![Version](https://img.shields.io/badge/version-2.8.1-e50914?style=flat-square)](#whats-new)
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square)](LICENSE)
 [![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-555?style=flat-square)](#installation)
 [![Electron](https://img.shields.io/badge/Electron-45-47848F?style=flat-square&logo=electron&logoColor=white)](https://www.electronjs.org/)
@@ -32,13 +32,21 @@ The interface is dark by default, keyboard- and controller-friendly, and designe
 
 ## What's new
 
-**Gigi 2.8.0** is the first release under the Gigi name. It includes the latest performance pass:
+**Gigi 2.8.1** makes discovery and the library mood-first, opens full cast and person pages, and turns the player into a modern control deck:
 
-- Home feeds and recommendations are cached locally to avoid repeated TMDB requests.
-- Age-rating lookups are deduplicated and run in small parallel batches.
-- Library facets (years, genres, tags and collections) are calculated in a single pass.
-- Home and Library are memoized to avoid renders caused by unrelated app state.
-- The app keeps the existing Streambert data directory and local database names, so an update does not wipe your library.
+- **Mood library:** a new panel asks what you want to feel, then filters by moment, emotion, company, rhythm and theme. Tags such as night, daytime, after lunch, joyful, sad or profound are derived automatically from TMDB metadata.
+- **3D tag cloud:** expand the panel into a full-screen, tiltable sphere. Every bubble shows how many titles still match, suggestions appear as you refine, and the library behind it filters live.
+- **Full-library tagging:** existing saved titles are backfilled quietly in the background; local tags and user edits are never overwritten.
+- **Cast and crew panel:** every movie and series page now lists directors, top-billed cast and key crew inline, with the complete credits one click away.
+- **Person pages:** open any actor, director or crew member to read their biography and full filmography, and add any of their titles to your library from the profile.
+- **Search that forgives typos:** misspelled titles and names resolve to the closest match, and people can be opened straight from the search results.
+- **Rotating home spotlight:** recommendations shaped by your history and the time of day, with trailer previews and a shortcut to your saved favourites.
+- **Player deck:** animated play, rewind and forward controls in the centre, a scrubbable timeline, speed, mute, fullscreen and a configurable hold-to-seek interval.
+- **Smarter skip intro:** a five-second halo appears on hover, auto-skips when complete, and leaves a five-second undo pill. AniSkip data is used when available, with a learned estimate for other series.
+- **Resume exactly where you were:** opening Settings from a playing title and pressing Back returns to the player at the same second, episode and pause state.
+- **Menus no longer pause the film:** closing a provider's quality or audio menu with an outside click restores playback instead of leaving it paused.
+- **Crisp Windows icon:** the app and the installer now carry a proper multi-resolution 32-bit icon, so Gigi stays sharp in the taskbar, Start menu and installer.
+- The existing Streambert data directory and local database names are unchanged, so updating does not wipe your library.
 
 ## Features
 
@@ -82,12 +90,12 @@ The interface is dark by default, keyboard- and controller-friendly, and designe
 ### Windows
 
 <p align="center">
-  <a href="https://github.com/necu/Gigi/releases/latest/download/Gigi-Setup-2.8.0.exe">
-    <img src="https://img.shields.io/badge/Download_for_Windows-Gigi_2.8.0-e50914?style=for-the-badge&logo=windows&logoColor=white" alt="Download Gigi for Windows">
+  <a href="https://github.com/necu/Gigi/releases/latest">
+    <img src="https://img.shields.io/badge/Download_for_Windows-Latest-e50914?style=for-the-badge&logo=windows&logoColor=white" alt="Download Gigi for Windows">
   </a>
 </p>
 
-Download the installer directly with the button above, run it and choose an installation folder, then launch **Gigi** from the Start menu. The installer is also generated locally by `npm run dist:win` as `dist/Gigi Setup 2.8.0.exe`.
+Download the latest installer from the button above, run it and choose an installation folder, then launch **Gigi** from the Start menu. The installer is also generated locally by `npm run dist:win` as `dist/Gigi Setup 2.8.1.exe`.
 
 The installer is not code-signed, so Windows SmartScreen may show a warning. Choose **More info → Run anyway** only if you trust the build and its source.
 

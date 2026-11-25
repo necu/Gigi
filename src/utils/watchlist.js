@@ -353,6 +353,7 @@ export function buildWatchlistView(state, options = {}) {
     types = [],
     statuses = [],
     tags = [],
+    tagGroups = {},
     collection = null,
     sort = "manual",
     dir = "asc",
@@ -361,12 +362,20 @@ export function buildWatchlistView(state, options = {}) {
   const all = (state.order || [])
     .map((key) => state.items[key])
     .filter(Boolean);
+  const groupTags = Object.values(tagGroups || {}).filter(Boolean);
 
   const filtered = all.filter((entry) => {
     if (!matchesQuery(entry, query)) return false;
     if (!matchesTypes(entry, types)) return false;
     if (statuses.length > 0 && !statuses.includes(entry.status)) return false;
     if (tags.length > 0 && !tags.some((tag) => entry.tags.includes(tag)))
+      return false;
+    // One tag per feeling dimension: AND across dimensions, so choosing
+    // "Noche" + "Alegre" means both tags must be present, not either.
+    if (
+      groupTags.length > 0 &&
+      !groupTags.every((tag) => entry.tags.includes(tag))
+    )
       return false;
     if (collection && !entry.collections.includes(collection)) return false;
     return true;

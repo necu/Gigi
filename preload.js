@@ -77,9 +77,21 @@ contextBridge.exposeInMainWorld("electron", {
   // App version (from package.json via Electron)
   getAppVersion: () => ipcRenderer.invoke("get-app-version"),
 
+  // Live video state forwarded by the injected player guard.
+  onPlayerMediaState: (cb) => {
+    const h = (_, data) => cb(data);
+    ipcRenderer.on("player-media-state", h);
+    return () => ipcRenderer.removeListener("player-media-state", h);
+  },
+  onPlayerCommand: (cb) => {
+    const h = (_, data) => cb(data);
+    ipcRenderer.on("player-command", h);
+    return () => ipcRenderer.removeListener("player-command", h);
+  },
+
   // Webview fullscreen
   onWebviewEnterFullscreen: (cb) => {
-    const h = () => cb();
+    const h = (_, data) => cb(data);
     ipcRenderer.on("webview-enter-fullscreen", h);
     return h;
   },
@@ -119,6 +131,10 @@ contextBridge.exposeInMainWorld("electron", {
   clearAppCache: () => ipcRenderer.invoke("clear-app-cache"),
   queryVideoProgress: (webContentsId) =>
     ipcRenderer.invoke("query-video-progress", webContentsId),
+  controlVideo: (webContentsId, action, value = null) =>
+    ipcRenderer.invoke("control-video", { webContentsId, action, value }),
+  installPlayerGuard: (webContentsId) =>
+    ipcRenderer.invoke("install-player-guard", webContentsId),
   clearWatchData: () => ipcRenderer.invoke("clear-watch-data"),
   deleteAllDownloads: () => ipcRenderer.invoke("delete-all-downloads"),
   resetApp: () => ipcRenderer.invoke("reset-app"),

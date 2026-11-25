@@ -579,7 +579,7 @@ function createWindow() {
 
     installPopupHandler(wc);
     wc.on("enter-html-full-screen", () =>
-      mainWindow.webContents.send("webview-enter-fullscreen"),
+      mainWindow.webContents.send("webview-enter-fullscreen", { wcId: wc.id }),
     );
     wc.on("leave-html-full-screen", () =>
       mainWindow.webContents.send("webview-leave-fullscreen"),

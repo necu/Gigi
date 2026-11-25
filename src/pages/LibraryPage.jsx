@@ -9,7 +9,14 @@ import {
 } from "react";
 import MediaCard from "../components/MediaCard";
 import WatchlistEditModal from "../components/WatchlistEditModal";
+import SectionFrame from "../components/SectionFrame";
 import { ForYouShelf, SagaShelf } from "../components/LibrarySmart";
+import { useT } from "../utils/i18n";
+import { loadSectionOrder, saveSectionOrder } from "../utils/sectionLayout";
+import {
+  VibeCloudModal,
+  VibeFilterPanel,
+} from "../components/LibraryMoodExplorer";
 import { imgUrl } from "../utils/api";
 import { EyeIcon, SearchIcon, WatchedIcon } from "../components/Icons";
 import { useRatings, getRatingForItem } from "../utils/useRatings";
@@ -38,13 +45,122 @@ import {
   sagaEntryKey,
   sortSagaEntries,
 } from "../utils/sagaOrder";
+import {
+  hasVibeContext,
+  loadVibeFilters,
+  normalizeVibeFilters,
+  saveVibeFilters,
+} from "../utils/vibeTags";
 
 const TYPE_TABS = [
-  { id: "all", label: "All" },
-  { id: "movie", label: "Movies" },
-  { id: "tv", label: "Series" },
-  { id: "anime", label: "Anime" },
+  { id: "all", labelKey: "library.all" },
+  { id: "movie", labelKey: "library.movies" },
+  { id: "tv", labelKey: "library.series" },
+  { id: "anime", labelKey: "library.anime" },
 ];
+
+const LIBRARY_PANELS = ["sagas", "foryou", "vibe", "watchlist", "continue"];
+const LIBRARY_TOP_PANELS = ["sagas", "foryou", "vibe"];
+const LIBRARY_BOTTOM_PANELS = ["watchlist", "continue"];
+
+function relativeWatched(ts) {
+  const value = Number(ts) || 0;
+  if (!value) return "";
+  const diff = Math.max(0, Date.now() - value);
+  if (diff < 60_000) return "ahora";
+  if (diff < 3_600_000) return `hace ${Math.floor(diff / 60_000)} min`;
+  if (diff < 86_400_000) return `hace ${Math.floor(diff / 3_600_000)} h`;
+  if (diff < 7 * 86_400_000) return `hace ${Math.floor(diff / 86_400_000)} d`;
+  return new Date(value).toLocaleDateString("es-ES", {
+    day: "numeric",
+    month: "short",
+  });
+}
+
+/**
+ * Permanently visible, minimal watch-history strip. It sticks to the top of
+ * the library while scrolling and always shows the last titles played.
+ */
+function WatchHistoryRail({ history = [], watched, onSelect, onRemoveHistory }) {
+  return (
+    <section className="history-rail" aria-label="Watch history">
+      <div className="history-rail__head">
+        <div>
+          <div className="history-rail__eyebrow">Watch history</div>
+          <h2 className="history-rail__title">Lo último que has reproducido</h2>
+        </div>
+        <span className="history-rail__count">{history.length}</span>
+      </div>
+      {history.length > 0 ? (
+        <div className="history-rail__list">
+          {history.slice(0, 10).map((item) => {
+            const pk =
+              item.media_type === "movie"
+                ? `movie_${item.id}`
+                : `tv_${item.id}_s${item.season}e${item.episode}`;
+            const isWatched = !!watched?.[pk];
+            return (
+              <div className="history-pill" key={`${pk}_${item.watchedAt}`}>
+                <button
+                  type="button"
+                  className="history-pill__main"
+                  onClick={() => onSelect(item)}
+                  title={item.title}
+                >
+                  <span className="history-pill__poster">
+                    {item.poster_path ? (
+                      <img
+                        src={imgUrl(item.poster_path, "w92")}
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                      />
+                    ) : (
+                      <span>{item.title?.slice(0, 1) || "?"}</span>
+                    )}
+                  </span>
+                  <span className="history-pill__copy">
+                    <b>
+                      {item.title}
+                      {isWatched && <WatchedIcon size={12} />}
+                    </b>
+                    <small>
+                      {item.media_type === "tv" &&
+                      item.season != null &&
+                      item.episode != null
+                        ? `S${item.season}E${item.episode}${
+                            item.episodeName ? ` · ${item.episodeName}` : ""
+                          }`
+                        : "Película"}
+                      {" · "}
+                      {relativeWatched(item.watchedAt)}
+                    </small>
+                  </span>
+                </button>
+                {onRemoveHistory && (
+                  <button
+                    type="button"
+                    className="history-pill__remove"
+                    onClick={() => onRemoveHistory(item)}
+                    title="Quitar del historial"
+                    aria-label={`Quitar ${item.title} del historial`}
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="history-rail__empty">
+          Cuando empieces a ver algo, aquí quedará lo último que has
+          reproducido.
+        </div>
+      )}
+    </section>
+  );
+}
 
 function LibraryPage({
   watchlist,
@@ -79,6 +195,10 @@ function LibraryPage({
   const [typeTab, setTypeTab] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [tagFilter, setTagFilter] = useState(null);
+  const [vibeFilters, setVibeFilters] = useState(() =>
+    loadVibeFilters(storage),
+  );
+  const [showVibeCloud, setShowVibeCloud] = useState(false);
   const [collectionFilter, setCollectionFilter] = useState("");
   const [sagaOrder, setSagaOrder] = useState("release");
   const [sagaCustomOrder, setSagaCustomOrder] = useState([]);
@@ -89,6 +209,61 @@ function LibraryPage({
   const [activeView, setActiveView] = useState("all");
   const [showSaveView, setShowSaveView] = useState(false);
   const [viewName, setViewName] = useState("");
+  const [panelOrder, setPanelOrder] = useState(() =>
+    loadSectionOrder("library", LIBRARY_PANELS),
+  );
+  const t = useT();
+
+  // useWatchlist() returns a fresh API object on every App render. Derive from
+  // the stable state object instead so unrelated renders (downloads, toasts,
+  // etc.) do not rebuild the whole library view.
+  const watchlistState = watchlist.state || watchlist;
+  const savedEntries = useMemo(
+    () =>
+      (watchlistState.order || [])
+        .map((key) => watchlistState.items[key])
+        .filter(Boolean),
+    [watchlistState],
+  );
+
+  const movePanelWithin = useCallback((ids, id, delta) => {
+    setPanelOrder((current) => {
+      const group = current.filter((panelId) => ids.includes(panelId));
+      const from = group.indexOf(id);
+      const to = from + delta;
+      if (from < 0 || to < 0 || to >= group.length) return current;
+      const targetId = group[to];
+      const next = [...current];
+      const a = next.indexOf(id);
+      const b = next.indexOf(targetId);
+      [next[a], next[b]] = [next[b], next[a]];
+      saveSectionOrder("library", next);
+      return next;
+    });
+  }, []);
+  const moveTopPanel = useCallback(
+    (id, delta) => movePanelWithin(LIBRARY_TOP_PANELS, id, delta),
+    [movePanelWithin],
+  );
+  const moveBottomPanel = useCallback(
+    (id, delta) => movePanelWithin(LIBRARY_BOTTOM_PANELS, id, delta),
+    [movePanelWithin],
+  );
+  const topPanelOrder = panelOrder.filter((id) =>
+    LIBRARY_TOP_PANELS.includes(id),
+  );
+  const bottomPanelOrder = panelOrder.filter((id) =>
+    LIBRARY_BOTTOM_PANELS.includes(id),
+  );
+  const hasSagaShelf = useMemo(() => {
+    const counts = new Map();
+    for (const entry of savedEntries) {
+      for (const name of entry.collections || []) {
+        counts.set(name, (counts.get(name) || 0) + 1);
+      }
+    }
+    return [...counts.values()].some((count) => count >= 2);
+  }, [savedEntries]);
 
   const dragKey = useRef(null);
   const [dragOverKey, setDragOverKey] = useState(null);
@@ -104,6 +279,8 @@ function LibraryPage({
     setTypeTab("all");
     setStatusFilter("all");
     setTagFilter(null);
+    setVibeFilters({});
+    saveVibeFilters(storage, {});
     setQuery("");
     setActiveView("");
     // A playlist reads in release order, without changing the saved global
@@ -122,18 +299,6 @@ function LibraryPage({
     setSagaOrder(getSagaOrderPreference(collectionFilter));
     setSagaCustomOrder(getSagaCustomOrder(collectionFilter));
   }, [collectionFilter]);
-
-  // useWatchlist() returns a fresh API object on every App render. Derive from
-  // the stable state object instead so unrelated renders (downloads, toasts,
-  // etc.) do not rebuild the whole library view.
-  const watchlistState = watchlist.state || watchlist;
-  const savedEntries = useMemo(
-    () =>
-      (watchlistState.order || [])
-        .map((key) => watchlistState.items[key])
-        .filter(Boolean),
-    [watchlistState],
-  );
 
   const allItems = useMemo(
     () => [...inProgress, ...savedEntries],
@@ -157,6 +322,7 @@ function LibraryPage({
         types: typeTab === "all" ? [] : [typeTab],
         statuses: statusFilter === "all" ? [] : [statusFilter],
         tags: tagFilter ? [tagFilter] : [],
+        tagGroups: vibeFilters,
         collection: collectionFilter || null,
         sort,
         dir,
@@ -167,6 +333,7 @@ function LibraryPage({
       typeTab,
       statusFilter,
       tagFilter,
+      vibeFilters,
       collectionFilter,
       sort,
       dir,
@@ -199,7 +366,43 @@ function LibraryPage({
   // Filters change what is visible, so a stale selection would be confusing.
   useEffect(() => {
     setSelected(new Set());
-  }, [typeTab, statusFilter, tagFilter, collectionFilter, query]);
+  }, [
+    typeTab,
+    statusFilter,
+    tagFilter,
+    vibeFilters,
+    collectionFilter,
+    query,
+  ]);
+
+  const missingVibeCount = useMemo(
+    () => savedEntries.filter((entry) => !hasVibeContext(entry)).length,
+    [savedEntries],
+  );
+  const autoTagAttemptedRef = useRef(false);
+
+  // The mood cloud is only useful when the whole library has context tags.
+  // Backfill quietly in the background the first time the library is opened,
+  // with a cooldown so a temporary TMDB failure does not cause a loop.
+  useEffect(() => {
+    if (!apiKey || !missingVibeCount || organizing) return;
+    if (autoTagAttemptedRef.current) return;
+    const lastAttempt = Number(storage.get("vibeAutoTagAt")) || 0;
+    if (Date.now() - lastAttempt < 6 * 60 * 60 * 1000) return;
+    autoTagAttemptedRef.current = true;
+    storage.set("vibeAutoTagAt", Date.now());
+    onOrganize?.({ auto: true });
+  }, [apiKey, missingVibeCount, organizing, onOrganize]);
+
+  const handleVibeChange = useCallback(
+    (next) => {
+      const normalized = normalizeVibeFilters(next);
+      setVibeFilters(normalized);
+      saveVibeFilters(storage, normalized);
+      setActiveView("");
+    },
+    [],
+  );
 
   const handleSortChange = (value) => {
     setSort(value);
@@ -301,6 +504,7 @@ function LibraryPage({
     typeTab !== "all" ||
     statusFilter !== "all" ||
     tagFilter ||
+    Object.values(vibeFilters).some(Boolean) ||
     collectionFilter;
 
   const clearFilters = () => {
@@ -308,6 +512,8 @@ function LibraryPage({
     setTypeTab("all");
     setStatusFilter("all");
     setTagFilter(null);
+    setVibeFilters({});
+    saveVibeFilters(storage, {});
     setCollectionFilter("");
     setActiveView("all");
   };
@@ -325,6 +531,9 @@ function LibraryPage({
     setTypeTab(filters.typeTab || "all");
     setStatusFilter(filters.statusFilter || "all");
     setTagFilter(filters.tagFilter || null);
+    const nextVibeFilters = normalizeVibeFilters(filters.vibeFilters);
+    setVibeFilters(nextVibeFilters);
+    saveVibeFilters(storage, nextVibeFilters);
     setCollectionFilter(filters.collectionFilter || "");
     if (filters.sort) setSort(filters.sort);
     if (filters.dir) setDir(filters.dir);
@@ -337,6 +546,7 @@ function LibraryPage({
       typeTab,
       statusFilter,
       tagFilter,
+      vibeFilters,
       collectionFilter,
       sort,
       dir,
@@ -358,20 +568,20 @@ function LibraryPage({
     <div className="fade-in library-page">
       <div className="library-header">
         <div className="library-heading">
-          <div className="library-kicker">Your collection</div>
-          <h1 className="library-title">My Library</h1>
+          <div className="library-kicker">{t("library.kicker")}</div>
+          <h1 className="library-title">{t("library.title")}</h1>
           <div className="library-stats">
             <span className="library-stat">
-              <b>{facets.total}</b> saved
+              <b>{facets.total}</b> {t("library.saved")}
             </span>
             <span className="library-stat">
-              <b>{facets.statuses.planned}</b> planned
+              <b>{facets.statuses.planned}</b> {t("library.planned")}
             </span>
             <span className="library-stat">
-              <b>{facets.statuses.watching}</b> watching
+              <b>{facets.statuses.watching}</b> {t("library.watching")}
             </span>
             <span className="library-stat library-stat--accent">
-              <b>{facets.statuses.done}</b> completed
+              <b>{facets.statuses.done}</b> {t("library.completed")}
             </span>
           </div>
         </div>
@@ -379,22 +589,22 @@ function LibraryPage({
           {onOrganize && (
             <button
               className="btn btn-ghost"
-              onClick={onOrganize}
+              onClick={() => onOrganize?.({})}
               disabled={organizing}
               title="Re-derive genres, directors, decades and franchises for the library"
             >
               {organizing
-                ? `Organizing${
+                ? `${t("library.organizing")}${
                     organizeProgress?.total
                       ? ` ${organizeProgress.done}/${organizeProgress.total}`
                       : "…"
                   }`
-                : "✨ Organize"}
+                : `✨ ${t("library.organize")}`}
             </button>
           )}
           {selectMode && (
             <button className="btn btn-ghost" onClick={selectAllVisible}>
-              Select all
+              {t("library.selectAll")}
             </button>
           )}
           <button
@@ -404,25 +614,68 @@ function LibraryPage({
               else setSelectMode(true);
             }}
           >
-            {selectMode ? "Cancel selection" : "Select"}
+            {selectMode ? t("library.cancelSelection") : t("library.select")}
           </button>
         </div>
       </div>
 
-      {savedEntries.length > 0 && (
-        <div className="library-smart">
-          <SagaShelf entries={savedEntries} onOpenPlaylist={onOpenPlaylist} />
+      <div className="library-panels">
+        {hasSagaShelf && (
+          <SectionFrame
+            id="sagas"
+            index={topPanelOrder.indexOf("sagas")}
+            count={topPanelOrder.length}
+            onMove={moveTopPanel}
+            order={topPanelOrder.indexOf("sagas")}
+            className="library-smart"
+          >
+            <SagaShelf
+              entries={savedEntries}
+              onOpenPlaylist={onOpenPlaylist}
+            />
+          </SectionFrame>
+        )}
 
-          <ForYouShelf
-            entries={savedEntries}
-            apiKey={apiKey}
-            isSaved={isSaved}
-            onToggleSave={onToggleSave}
-            onAddMany={onAddMany}
-            onSelect={onSelect}
-          />
-        </div>
-      )}
+        {savedEntries.length > 0 && apiKey && (
+          <SectionFrame
+            id="foryou"
+            index={topPanelOrder.indexOf("foryou")}
+            count={topPanelOrder.length}
+            onMove={moveTopPanel}
+            order={topPanelOrder.indexOf("foryou")}
+            className="library-smart"
+          >
+            <ForYouShelf
+              entries={savedEntries}
+              apiKey={apiKey}
+              isSaved={isSaved}
+              onToggleSave={onToggleSave}
+              onAddMany={onAddMany}
+              onSelect={onSelect}
+            />
+          </SectionFrame>
+        )}
+
+        {savedEntries.length > 0 && (
+          <SectionFrame
+            id="vibe"
+            index={topPanelOrder.indexOf("vibe")}
+            count={topPanelOrder.length}
+            onMove={moveTopPanel}
+            order={topPanelOrder.indexOf("vibe")}
+          >
+            <VibeFilterPanel
+              entries={savedEntries}
+              active={vibeFilters}
+              onChange={handleVibeChange}
+              onExpand={() => setShowVibeCloud(true)}
+              organizing={organizing}
+              progress={organizeProgress}
+              missingCount={missingVibeCount}
+            />
+          </SectionFrame>
+        )}
+      </div>
 
       {collectionFilter && (
         <div className="library-playlist-banner">
@@ -476,8 +729,8 @@ function LibraryPage({
               setQuery(event.target.value);
               setActiveView("");
             }}
-            placeholder="Search your watchlist…"
-            aria-label="Search your watchlist"
+            placeholder={t("library.search")}
+            aria-label={t("library.searchAria")}
           />
           {query && (
             <button
@@ -627,7 +880,7 @@ function LibraryPage({
               setActiveView("");
             }}
           >
-            {tab.label}
+            {t(tab.labelKey)}
             <span className="library-tab-count">
               {tab.id === "all"
                 ? facets.total
@@ -719,18 +972,26 @@ function LibraryPage({
         </div>
       )}
 
+      <div className="library-panels library-panels--bottom">
       {facets.total > 0 && (
+        <SectionFrame
+          id="watchlist"
+          index={bottomPanelOrder.indexOf("watchlist")}
+          count={bottomPanelOrder.length}
+          onMove={moveBottomPanel}
+          order={bottomPanelOrder.indexOf("watchlist")}
+        >
         <div className="library-section">
           <div className="library-section-title">
-            Watchlist ({view.filtered}
-            {view.filtered !== facets.total ? ` of ${facets.total}` : ""})
+            {t("library.title")} ({view.filtered}
+            {view.filtered !== facets.total ? ` / ${facets.total}` : ""})
           </div>
 
           {view.filtered === 0 ? (
             <div className="library-empty-filter">
-              <p>No titles match these filters.</p>
+              <p>{t("library.empty")}</p>
               <button className="btn btn-ghost" onClick={clearFilters}>
-                Clear filters
+                {t("library.resetFilters")}
               </button>
             </div>
           ) : (
@@ -821,11 +1082,19 @@ function LibraryPage({
             </div>
           )}
         </div>
+        </SectionFrame>
       )}
 
       {inProgress.length > 0 && (
+        <SectionFrame
+          id="continue"
+          index={bottomPanelOrder.indexOf("continue")}
+          count={bottomPanelOrder.length}
+          onMove={moveBottomPanel}
+          order={bottomPanelOrder.indexOf("continue")}
+        >
         <div className="library-section">
-          <div className="library-section-title">Continue Watching</div>
+          <div className="library-section-title">{t("home.continue")}</div>
           <div className="cards-grid">
             {inProgress.map((item) => {
               const pk =
@@ -850,87 +1119,9 @@ function LibraryPage({
             })}
           </div>
         </div>
+        </SectionFrame>
       )}
-
-      {history.length > 0 && (
-        <div className="library-section">
-          <div className="library-section-title">Watch History</div>
-          <div className="history-rows">
-            {history.map((item) => {
-              const pk =
-                item.media_type === "movie"
-                  ? `movie_${item.id}`
-                  : `tv_${item.id}_s${item.season}e${item.episode}`;
-              const isWatched = !!watched?.[pk];
-              return (
-                <div
-                  key={`${pk}_${item.watchedAt}`}
-                  className="history-row"
-                  onClick={() => onSelect(item)}
-                >
-                  <div className="history-thumb">
-                    {item.poster_path && (
-                      <img
-                        src={imgUrl(item.poster_path, "w92")}
-                        alt=""
-                        loading="lazy"
-                        decoding="async"
-                      />
-                    )}
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div
-                      style={{
-                        fontSize: 14,
-                        fontWeight: 500,
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 6,
-                      }}
-                    >
-                      {item.title}
-                      {isWatched && <WatchedIcon size={16} />}
-                    </div>
-                    <div style={{ fontSize: 12, color: "var(--text3)" }}>
-                      {item.media_type === "tv" &&
-                        item.season != null &&
-                        item.episode != null && (
-                          <>
-                            {`S${item.season}E${item.episode}`}
-                            {item.episodeName ? ` · ${item.episodeName}` : ""}
-                            {" · "}
-                          </>
-                        )}
-                      {new Date(item.watchedAt).toLocaleDateString("en-US", {
-                        year: "numeric",
-                        month: "short",
-                        day: "numeric",
-                      })}
-                    </div>
-                  </div>
-                  <span
-                    className={`search-result-type ${item.media_type === "tv" ? "type-tv" : "type-movie"}`}
-                  >
-                    {item.media_type === "tv" ? "Series" : "Movie"}
-                  </span>
-                  {onRemoveHistory && (
-                    <button
-                      className="history-remove-btn"
-                      title="Remove from history"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onRemoveHistory(item);
-                      }}
-                    >
-                      ✕
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      </div>
 
       {history.length === 0 && facets.total === 0 && (
         <div className="empty-state">
@@ -941,6 +1132,15 @@ function LibraryPage({
           </p>
         </div>
       )}
+
+      <VibeCloudModal
+        open={showVibeCloud}
+        entries={savedEntries}
+        active={vibeFilters}
+        onChange={handleVibeChange}
+        onClose={() => setShowVibeCloud(false)}
+        onSelect={onSelect}
+      />
 
       {selected.size > 0 && (
         <div className="bulk-bar" role="region" aria-label="Bulk actions">

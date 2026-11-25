@@ -39,6 +39,8 @@ import {
 import Sidebar from "./components/Sidebar";
 import SetupScreen from "./components/SetupScreen";
 import CloseConfirmModal from "./components/CloseConfirmModal";
+import WatchHistoryRail from "./components/WatchHistoryRail";
+import { getAppLanguage, useT } from "./utils/i18n";
 import { useGamepadNav } from "./utils/useGamepadNav";
 
 // Modals that are only needed after a user action are split out of the shell
@@ -65,6 +67,7 @@ import {
 } from "./utils/updates";
 
 export default function App() {
+  const t = useT();
   // apiKey loaded async from secure storage (OS keychain)
   const [apiKey, setApiKey] = useState(null);
   const [apiKeyLoaded, setApiKeyLoaded] = useState(false);
@@ -80,6 +83,11 @@ export default function App() {
   );
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [platform, setPlatform] = useState(null);
+
+  // Keep <html lang> in sync with the selected app language.
+  useEffect(() => {
+    document.documentElement.setAttribute("lang", getAppLanguage());
+  }, []);
 
   // Navigation history stack for Ctrl+Z back navigation
   const [navStack, setNavStack] = useState([]);
@@ -713,6 +721,23 @@ export default function App() {
   // Refs so navigate/navigateBack never need page/selected as deps
   const pageRef = useRef(page);
   const selectedRef = useRef(selected);
+  // Last position reported by an inline player. Kept in a ref (not state) so
+  // five-second progress ticks never re-render the whole app shell.
+  const playerSessionRef = useRef(null);
+  const playerBackHandlerRef = useRef(null);
+  const handlePlaybackSession = useCallback((session) => {
+    playerSessionRef.current = session;
+  }, []);
+  // Pages with an open inline player register here so the global Back button
+  // (sidebar, Ctrl+Z, gamepad B) closes the player before leaving the title.
+  const registerPlayerBack = useCallback((handler) => {
+    playerBackHandlerRef.current = handler;
+    return () => {
+      if (playerBackHandlerRef.current === handler) {
+        playerBackHandlerRef.current = null;
+      }
+    };
+  }, []);
   useEffect(() => {
     pageRef.current = page;
   }, [page]);
@@ -720,23 +745,62 @@ export default function App() {
     selectedRef.current = selected;
   }, [selected]);
 
+  const readMainScroll = useCallback(() => {
+    if (typeof document === "undefined") return 0;
+    return document.querySelector(".main")?.scrollTop || 0;
+  }, []);
+
+  const restoreMainScroll = useCallback((top) => {
+    if (typeof document === "undefined") return;
+    const apply = () => {
+      const scroller = document.querySelector(".main");
+      if (scroller) scroller.scrollTop = Math.max(0, Number(top) || 0);
+    };
+    // Lazy pages mount one or two frames later; restore after both paints so
+    // Back returns to the exact place the user left, not just the same page.
+    requestAnimationFrame(() => {
+      apply();
+      requestAnimationFrame(apply);
+    });
+    setTimeout(apply, 140);
+  }, []);
+
   const navigateBack = useCallback(() => {
+    if (typeof playerBackHandlerRef.current === "function") {
+      const handler = playerBackHandlerRef.current;
+      playerBackHandlerRef.current = null;
+      handler();
+      return;
+    }
     setNavStack((prev) => {
       if (prev.length === 0) return prev;
       const last = prev[prev.length - 1];
       setPage(last.page);
       setSelected(last.selected);
+      if (last.page !== "movie" && last.page !== "tv") {
+        playerSessionRef.current = null;
+      }
+      restoreMainScroll(last.scrollTop);
       if (typeof gc === "function") {
         requestIdleCallback(() => gc(), { timeout: 2000 });
       }
       return prev.slice(0, -1);
     });
-  }, []);
+  }, [restoreMainScroll]);
 
-  const navigate = useCallback((pg, data = null) => {
+  const navigate = useCallback((pg, data = null, session = null) => {
+    // Settings is a detour: keep the player position so Back can resume it.
+    // Every other destination is a real navigation and ends the session,
+    // unless the caller supplies a session to resume (watch history).
+    if (session) playerSessionRef.current = session;
+    else if (pg !== "settings") playerSessionRef.current = null;
     setNavStack((prev) => [
       ...prev,
-      { page: pageRef.current, selected: selectedRef.current },
+      {
+        page: pageRef.current,
+        selected: selectedRef.current,
+        scrollTop: readMainScroll(),
+      },
     ]);
     setSelected(data);
     setPage(pg);
@@ -745,7 +809,61 @@ export default function App() {
     if (typeof gc === "function") {
       requestIdleCallback(() => gc(), { timeout: 2000 });
     }
-  }, []);
+  }, [readMainScroll]);
+
+  // Clicking the permanent history rail reopens the exact title/episode and
+  // resumes the second where it was left. Pages already know how to restore a
+  // `resumeSession`, so this only has to seed it before navigating.
+  const openHistoryEntry = useCallback(
+    (entry) => {
+      if (!entry?.id) return;
+      const pageName = entry.media_type === "tv" ? "tv" : "movie";
+      const progressKey =
+        pageName === "movie"
+          ? `movie_${entry.id}`
+          : `tv_${entry.id}_s${entry.season}e${entry.episode}`;
+      const time = Number(storage.get("dlTime_" + progressKey)) || 0;
+      navigate(
+        pageName,
+        {
+          ...entry,
+          media_type: pageName,
+          season: entry.season ?? null,
+          episode: entry.episode ?? null,
+        },
+        {
+          page: pageName,
+          id: entry.id,
+          season: entry.season ?? null,
+          episode: entry.episode ?? null,
+          playing: true,
+          paused: false,
+          time,
+          source: storage.get("playerSource"),
+        },
+      );
+      // The detail page mounts asynchronously and the player only exists after
+      // metadata arrives. Wait for it, then bring it into view and focus it.
+      let attempts = 0;
+      const focusPlayer = () => {
+        const wrap = document.querySelector(".player-wrap");
+        if (wrap) {
+          wrap.scrollIntoView({ behavior: "smooth", block: "center" });
+          wrap.setAttribute("tabindex", "-1");
+          try {
+            wrap.focus({ preventScroll: true });
+            const webview = wrap.querySelector("webview");
+            webview?.focus?.();
+          } catch {}
+          return;
+        }
+        if (attempts++ < 40) setTimeout(focusPlayer, 250);
+        else document.querySelector(".main")?.scrollTo({ top: 0 });
+      };
+      setTimeout(focusPlayer, 220);
+    },
+    [navigate],
+  );
 
   const openSearch = useCallback(() => setShowSearch(true), []);
   const openShortcuts = useCallback(() => setShowShortcuts(true), []);
@@ -1029,7 +1147,7 @@ export default function App() {
     [enrichWatchlistEntry, getMediaType, showToast],
   );
 
-  const organizeLibrary = useCallback(async () => {
+  const organizeLibrary = useCallback(async (options = {}) => {
     if (!apiKey || organizing) return;
     const entries = Object.values(watchlistRef.current.items || {});
     if (entries.length === 0) {
@@ -1043,7 +1161,9 @@ export default function App() {
       const result = await organizeEntries({
         entries,
         apiKey,
-        limit: 50,
+        // The manual button is a full migration; the automatic pass is capped
+        // so opening the library never starts an unbounded TMDB crawl.
+        limit: options.auto ? 1000 : entries.length,
         onProgress: (progress) => setOrganizeProgress(progress),
       });
 
@@ -1270,31 +1390,31 @@ export default function App() {
           {/* Suspense boundary: lazy page chunks are fetched on first visit */}
           {apiKeyStatus === "invalid_token" && (
             <div className="api-status-banner api-status-error">
-              <span>
-                ⚠ Your TMDB token is invalid, not set or has been revoked.
-                Movies and shows won't load.
-              </span>
+              <span>⚠ {t("app.apiInvalid")}</span>
               <button className="api-status-btn" onClick={changeApiKey}>
-                Update Token
+                {t("app.apiUpdate")}
               </button>
             </div>
           )}
           {apiKeyStatus === "unreachable" && (
             <div className="api-status-banner api-status-warn">
-              <span>
-                ⚠ Cannot reach TMDB, check your internet connection. Content may
-                not load.
-              </span>
+              <span>⚠ {t("app.apiUnreachable")}</span>
               <button
                 className="api-status-btn"
                 onClick={() =>
                   setApiKeyStatus("checking") || window.location.reload()
                 }
               >
-                Retry
+                {t("app.apiRetry")}
               </button>
             </div>
           )}
+          <WatchHistoryRail
+            history={history}
+            watched={watched}
+            onSelect={openHistoryEntry}
+            onRemoveHistory={removeHistory}
+          />
           <Suspense
             fallback={
               <div
@@ -1305,7 +1425,7 @@ export default function App() {
                   fontSize: 15,
                 }}
               >
-                Laden…
+                {t("common.loading")}
               </div>
             }
           >
@@ -1331,6 +1451,7 @@ export default function App() {
             )}
             {page === "movie" && selected && (
               <MoviePage
+                key={`movie-${selected.id}`}
                 item={selected}
                 apiKey={apiKey}
                 playerSettings={playerSettings}
@@ -1343,6 +1464,9 @@ export default function App() {
                 onSettings={(section) =>
                   navigate("settings", { section: section || null })
                 }
+                resumeSession={playerSessionRef.current}
+                onPlaybackSession={handlePlaybackSession}
+                registerPlayerBack={registerPlayerBack}
                 onDownloadStarted={handleDownloadStarted}
                 watched={watched}
                 onMarkWatched={markWatched}
@@ -1359,6 +1483,7 @@ export default function App() {
             )}
             {page === "tv" && selected && (
               <TVPage
+                key={`tv-${selected.id}`}
                 item={selected}
                 apiKey={apiKey}
                 playerSettings={playerSettings}
@@ -1371,6 +1496,9 @@ export default function App() {
                 onSettings={(section) =>
                   navigate("settings", { section: section || null })
                 }
+                resumeSession={playerSessionRef.current}
+                onPlaybackSession={handlePlaybackSession}
+                registerPlayerBack={registerPlayerBack}
                 onDownloadStarted={handleDownloadStarted}
                 watched={watched}
                 onMarkWatched={markWatched}
@@ -1426,6 +1554,8 @@ export default function App() {
                 apiKey={apiKey}
                 onBack={navigateBack}
                 onSelect={handleSelectResult}
+                isSaved={isSaved}
+                onToggleSave={toggleSave}
               />
             )}
             {page === "settings" && (
@@ -1468,6 +1598,7 @@ export default function App() {
             <SearchModal
               apiKey={apiKey}
               onSelect={handleSelectResult}
+              onOpenPerson={openPerson}
               onClose={() => setShowSearch(false)}
               offline={offline}
               taste={taste}

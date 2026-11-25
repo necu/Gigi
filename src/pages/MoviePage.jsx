@@ -67,6 +67,7 @@ import {
   getRatingCountry,
 } from "../utils/ageRating";
 import CastModal from "../components/CastModal";
+import CastPanel from "../components/CastPanel";
 import { useCredits } from "../utils/useCredits";
 import {
   GAMEPAD_PLAYER_SCRIPT,
@@ -77,6 +78,8 @@ import {
 import { useSourceId } from "../utils/useSourceId";
 import { setPlayerGamepadActive } from "../utils/gamepadPlayerState";
 import HiAnimeLoader from "../components/HiAnimeLoader";
+import PlayerDeck from "../components/PlayerDeck";
+import { useT } from "../utils/i18n";
 
 export default function MoviePage({
   item,
@@ -89,6 +92,9 @@ export default function MoviePage({
   saveProgress,
   onBack,
   onSettings,
+  resumeSession,
+  onPlaybackSession,
+  registerPlayerBack,
   onDownloadStarted,
   watched,
   onMarkWatched,
@@ -102,9 +108,17 @@ export default function MoviePage({
   onOpenPlaylist,
   onOpenPerson,
 }) {
+  const t = useT();
   const [details, setDetails] = useState(null);
   const [showSaga, setShowSaga] = useState(false);
-  const [playing, setPlaying] = useState(false);
+  const [playing, setPlaying] = useState(
+    () =>
+      !!(
+        resumeSession?.playing &&
+        resumeSession.page === "movie" &&
+        Number(resumeSession.id) === Number(item.id)
+      ),
+  );
   const [showDownload, setShowDownload] = useState(false);
   const [trailerKey, setTrailerKey] = useState(null);
   const [showTrailer, setShowTrailer] = useState(false);
@@ -134,6 +148,10 @@ export default function MoviePage({
   const sourceRef = useRef(null);
   const playerWrapRef = useRef(null);
   const webviewRef = useRef(null);
+  const resumeAppliedRef = useRef(false);
+  // A live player reports its position to App, which can re-render this page.
+  // Only the session that existed when the page mounted is a restore request.
+  const initialResumeRef = useRef(resumeSession);
   // Always-current refs for interval callbacks, avoids stale closures without restarting the interval
   const saveProgressRef = useRef(saveProgress);
   saveProgressRef.current = saveProgress;
@@ -158,6 +176,7 @@ export default function MoviePage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [srcId.id]);
   const [playerFullscreen, setPlayerFullscreen] = useState(false);
+  const fullscreenExitRef = useRef(false);
   // pipOpen=true: main webview shows about:blank, pop-out window has the real player
   const [pipOpen, setPipOpen] = useState(false);
   const pipUrlRef = useRef(null); // URL to restore when pop-out closes
@@ -702,6 +721,14 @@ export default function MoviePage({
             saveProgressRef.current(progressKey, Math.min(p, 100));
             // Also persist actual seconds so DownloadsPage can show resume position
             storage.set("dlTime_" + progressKey, Math.floor(ct));
+            onPlaybackSession?.({
+              page: "movie",
+              id: item.id,
+              playing: !pipOpen,
+              time: ct,
+              duration: result.duration,
+              source: playerSource,
+            });
 
             // Auto-mark watched when remaining time ≤ threshold
             const remaining = result.duration - ct;
@@ -721,26 +748,142 @@ export default function MoviePage({
       clearTimeout(timer);
       clearInterval(interval);
     };
-  }, [playing, progressKey, watchedThreshold, playerSource, progressViaFrames]);
+  }, [
+    playing,
+    progressKey,
+    watchedThreshold,
+    playerSource,
+    progressViaFrames,
+    item.id,
+    pipOpen,
+    onPlaybackSession,
+  ]);
 
   const handlePlay = useCallback(() => {
     setM3u8Url(null);
     setInterceptedSubs([]);
     setPlaying(true);
+    onPlaybackSession?.({
+      page: "movie",
+      id: item.id,
+      playing: true,
+      time: Number(storage.get("dlTime_" + progressKey)) || 0,
+      duration: 0,
+      source: playerSource,
+    });
     onHistory({ ...d, media_type: "movie" });
-  }, [d, onHistory]);
+  }, [d, item.id, onHistory, onPlaybackSession, playerSource, progressKey]);
+
+  const handlePlayerExit = useCallback(() => {
+    setPlaying(false);
+    setPlayerFullscreen(false);
+    document.documentElement.removeAttribute("data-player-fullscreen");
+    onPlaybackSession?.({
+      page: "movie",
+      id: item.id,
+      playing: false,
+      time: 0,
+      duration: 0,
+      source: playerSource,
+    });
+  }, [item.id, onPlaybackSession, playerSource]);
+
+  useEffect(() => {
+    if (!playing || !registerPlayerBack) return undefined;
+    return registerPlayerBack(handlePlayerExit);
+  }, [handlePlayerExit, playing, registerPlayerBack]);
+
+  const handleDetailBack = useCallback(() => {
+    if (playing) {
+      handlePlayerExit();
+      return;
+    }
+    onBack();
+  }, [handlePlayerExit, onBack, playing]);
+
+  // Restore the session after returning from Settings. The control IPC walks
+  // every iframe, so this also works when the provider nests its video.
+  useEffect(() => {
+    if (!playing || resumeAppliedRef.current) return undefined;
+    const session = initialResumeRef.current;
+    if (
+      !session?.playing ||
+      session.page !== "movie" ||
+      Number(session.id) !== Number(item.id)
+    ) {
+      return undefined;
+    }
+    const target = Number(session.time) || 0;
+    const wv = webviewRef.current;
+    if (!wv) return undefined;
+    let cancelled = false;
+    let attempts = 0;
+
+    const apply = async () => {
+      if (cancelled || resumeAppliedRef.current) return;
+      let wcId = null;
+      try {
+        wcId = wv.getWebContentsId?.();
+      } catch {}
+      if (wcId && window.electron?.controlVideo) {
+        const state = await window.electron.controlVideo(wcId, "state");
+        if (state?.found && state.duration > 0) {
+          if (target > 1) {
+            await window.electron.controlVideo(wcId, "seek-to", target);
+          }
+          if (session.paused) {
+            await window.electron.controlVideo(wcId, "pause");
+          } else {
+            await window.electron.controlVideo(wcId, "play");
+          }
+          resumeAppliedRef.current = true;
+          return;
+        }
+      }
+      if (attempts++ < 20) setTimeout(apply, 800);
+    };
+
+    wv.addEventListener("dom-ready", apply);
+    apply();
+    return () => {
+      cancelled = true;
+      wv.removeEventListener("dom-ready", apply);
+    };
+  }, [playing, item.id]);
 
   // Intercept fullscreen requests from embedded players (vidsrc / 2embed use
-  // the native Fullscreen API which would otherwise fullscreen the entire app).
+  // the native Fullscreen API which would otherwise hide every host overlay,
+  // including the deck). Leave the guest's native fullscreen immediately and
+  // keep our own CSS fullscreen, so the deck stays visible and interactive.
   // Videasy and HiAnime handle fullscreen internally via CSS, skip those.
   useEffect(() => {
     if (!playing) return;
-    if (!NEEDS_INTERCEPT.includes(playerSource)) return;
-    const enterH = window.electron?.onWebviewEnterFullscreen?.(() => {
+    const enterH = window.electron?.onWebviewEnterFullscreen?.((payload) => {
+      let wcId = null;
+      try {
+        wcId = webviewRef.current?.getWebContentsId?.();
+      } catch {}
+      if (payload?.wcId && wcId && Number(payload.wcId) !== Number(wcId)) return;
       setPlayerFullscreen(true);
       document.documentElement.setAttribute("data-player-fullscreen", "1");
+      fullscreenExitRef.current = true;
+      try {
+        const wv = webviewRef.current;
+        if (wcId && window.electron?.controlVideo) {
+          // Reach cross-origin provider frames, not just the top document.
+          window.electron.controlVideo(wcId, "exit-fullscreen").catch(() => {});
+        } else {
+          wv?.executeJavaScript(
+            "document.exitFullscreen && document.exitFullscreen().catch(function() {})",
+          ).catch(() => {});
+        }
+      } catch {}
     });
     const leaveH = window.electron?.onWebviewLeaveFullscreen?.(() => {
+      if (fullscreenExitRef.current) {
+        fullscreenExitRef.current = false;
+        return;
+      }
       setPlayerFullscreen(false);
       document.documentElement.removeAttribute("data-player-fullscreen");
       if (document.fullscreenElement) document.exitFullscreen?.();
@@ -751,6 +894,24 @@ export default function MoviePage({
       document.documentElement.removeAttribute("data-player-fullscreen");
     };
   }, [playing, playerSource]);
+
+  const togglePlayerFullscreen = useCallback(() => {
+    setPlayerFullscreen((current) => {
+      const next = !current;
+      if (next) document.documentElement.setAttribute("data-player-fullscreen", "1");
+      else document.documentElement.removeAttribute("data-player-fullscreen");
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!playerFullscreen) return undefined;
+    const onKey = (event) => {
+      if (event.key === "Escape") togglePlayerFullscreen();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [playerFullscreen, togglePlayerFullscreen]);
 
   // ── PiP pop-out: navigate main webview away so only one stream is active ──
   useEffect(() => {
@@ -902,21 +1063,21 @@ export default function MoviePage({
                 <button
                   className="btn btn-primary btn-restricted"
                   disabled
-                  title="This movie has not been released yet"
+                  title={t("detail.unreleasedHint")}
                 >
-                  🔒 Unreleased
+                  🔒 {t("detail.unreleased")}
                 </button>
               ) : restricted ? (
                 <button
                   className="btn btn-primary btn-restricted"
                   disabled
-                  title="Inappropriate for your age rating setting"
+                  title={t("detail.ageHint")}
                 >
-                  🔒 Restricted
+                  🔒 {t("detail.restricted")}
                 </button>
               ) : (
                 <button className="btn btn-primary" onClick={handlePlay}>
-                  <PlayIcon /> {playing ? "Restart" : "Play"}
+                  <PlayIcon /> {playing ? t("detail.restart") : t("detail.play")}
                 </button>
               )}
               {trailerKey &&
@@ -924,27 +1085,27 @@ export default function MoviePage({
                   <button
                     className="btn btn-secondary btn-restricted"
                     disabled
-                    title="Inappropriate for your age rating setting"
+                    title={t("detail.ageHint")}
                   >
-                    🔒 Trailer
+                    🔒 {t("detail.trailer")}
                   </button>
                 ) : (
                   <button
                     className="btn btn-secondary"
                     onClick={() => setShowTrailer(true)}
                   >
-                    <TrailerIcon /> Trailer
+                    <TrailerIcon /> {t("detail.trailer")}
                   </button>
                 ))}
               <button
                 className="btn btn-secondary"
                 onClick={() => setShowCast(true)}
               >
-                <CastIcon /> Cast
+                <CastIcon /> {t("detail.cast")}
               </button>
               <button className="btn btn-secondary" onClick={onSave}>
                 {isSaved ? <BookmarkFillIcon /> : <BookmarkIcon />}
-                {isSaved ? "Saved" : "Save"}
+                {isSaved ? t("detail.saved") : t("detail.save")}
               </button>
               <button
                 className="btn btn-secondary btn-saga"
@@ -959,7 +1120,7 @@ export default function MoviePage({
                     className="btn btn-ghost watched-btn"
                     onClick={() => onMarkUnwatched?.(progressKey)}
                   >
-                    <WatchedIcon size={16} /> Watched
+                    <WatchedIcon size={16} /> {t("detail.watched")}
                   </button>
                 ) : (
                   <>
@@ -967,7 +1128,7 @@ export default function MoviePage({
                       className="btn btn-ghost"
                       onClick={() => onMarkWatched?.(progressKey)}
                     >
-                      ✓ Mark Watched
+                      ✓ {t("detail.markWatched")}
                     </button>
                     {hasProgress && (
                       <button
@@ -978,18 +1139,26 @@ export default function MoviePage({
                           storage.set("dlTime_" + progressKey, null);
                         }}
                       >
-                        ⊘ Not Started
+                        ⊘ {t("detail.notStarted")}
                       </button>
                     )}
                   </>
                 ))}
-              <button className="btn btn-ghost" onClick={onBack}>
-                <BackIcon /> Back
+              <button className="btn btn-ghost" onClick={handleDetailBack}>
+                <BackIcon /> {t("detail.back")}
               </button>
             </div>
           </div>
         </div>
       </div>
+
+      <CastPanel
+        cast={credits.cast}
+        crew={credits.crew}
+        loading={credits.loading}
+        onOpenPerson={onOpenPerson}
+        onShowAll={() => setShowCast(true)}
+      />
 
       {playing && !restricted && !isUnreleased && (
         <div className="section">
@@ -1240,6 +1409,35 @@ export default function MoviePage({
                 <PopOutIcon />
               </button>
             </div>
+            <PlayerDeck
+              webviewRef={webviewRef}
+              wrapRef={playerWrapRef}
+              active={
+                playing &&
+                !pipOpen &&
+                !webviewLoading &&
+                !srcId.error &&
+                !resolveError
+              }
+              pipOpen={pipOpen}
+              onExit={handlePlayerExit}
+              onSettings={onSettings}
+              onSession={(state) =>
+                onPlaybackSession?.({
+                  page: "movie",
+                  id: item.id,
+                  playing: true,
+                  paused: state.paused,
+                  time: state.time,
+                  duration: state.duration,
+                  source: playerSource,
+                })
+              }
+              title={title}
+              subtitle={year ? String(year) : null}
+              pageFullscreen={playerFullscreen}
+              onToggleFullscreen={togglePlayerFullscreen}
+            />
             {showSourceMenu && menuPos && (
               <div
                 className="source-dropdown source-dropdown--fixed"
@@ -1326,36 +1524,6 @@ export default function MoviePage({
             </button>
           </div>
 
-          {displayPct > 0 && (
-            <div className="progress-bar-row">
-              <div className="progress-bar-outer">
-                <div
-                  className="progress-bar-fill"
-                  style={{ width: `${Math.min(displayPct, 100)}%` }}
-                />
-              </div>
-              <span style={{ fontSize: 12, color: "var(--text3)" }}>
-                {progressLabel}
-              </span>
-            </div>
-          )}
-          <div className="progress-mark-row">
-            <span
-              style={{ fontSize: 12, color: "var(--text3)", marginRight: 4 }}
-            >
-              Mark progress:
-            </span>
-            {[25, 50, 75, 100].map((p) => (
-              <button
-                key={p}
-                className="btn btn-ghost"
-                style={{ padding: "5px 14px", fontSize: 12 }}
-                onClick={() => saveProgress(progressKey, p)}
-              >
-                {p}%
-              </button>
-            ))}
-          </div>
         </div>
       )}
 

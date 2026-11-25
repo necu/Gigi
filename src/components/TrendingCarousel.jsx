@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import { imgUrl, isAnimeContent } from "../utils/api";
 import { StarIcon, ChevronLeftIcon, ChevronRightIcon } from "./Icons";
+import { storage, STORAGE_KEYS } from "../utils/storage";
+import { useT } from "../utils/i18n";
 
 const VISIBLE = 5;
 const HALF = Math.floor(VISIBLE / 2);
@@ -23,11 +25,14 @@ function visibilityRatio(el, scrollRoot) {
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 const RatingBadge = memo(function RatingBadge({ cert, restricted }) {
+  const t = useT();
   if (!cert) return null;
   return (
     <span
       className={`carousel-rating-badge${restricted ? " carousel-rating-badge--restricted" : ""}`}
-      title={restricted ? "Age-restricted" : `Rated ${cert}`}
+      title={
+        restricted ? t("carousel.ageRestricted") : t("carousel.rated", { cert })
+      }
     >
       {cert}
     </span>
@@ -44,6 +49,7 @@ const CarouselSlot = memo(function CarouselSlot({
   restricted,
   isAnime,
 }) {
+  const t = useT();
   if (!item) return null;
   const isCenter = offset === 0;
   const abs = Math.abs(offset);
@@ -105,7 +111,9 @@ const CarouselSlot = memo(function CarouselSlot({
 
         {isUnreleased && (
           <div className="carousel-unreleased-overlay">
-            <span className="carousel-unreleased-label">🔒 Coming Soon</span>
+            <span className="carousel-unreleased-label">
+              🔒 {t("carousel.comingSoon")}
+            </span>
             {releaseLabel && (
               <span className="carousel-unreleased-date">{releaseLabel}</span>
             )}
@@ -135,7 +143,9 @@ const CarouselSlot = memo(function CarouselSlot({
             {year && <span>{year}</span>}
             {item.media_type && (
               <span className="carousel-info__type">
-                {item.media_type === "tv" ? "Series" : "Movie"}
+                {item.media_type === "tv"
+                  ? t("carousel.series")
+                  : t("carousel.movie")}
               </span>
             )}
           </div>
@@ -154,12 +164,20 @@ export default function TrendingCarousel({
   titleHighlight,
   subtitle,
   ratingsMap = {},
+  storageKey = null,
 }) {
+  const t = useT();
   const count = items.length;
   const activeRef = useRef(0);
   const [active, setActive] = useState(0);
   const [direction, setDirection] = useState(1);
   const [animating, setAnimating] = useState(false);
+  const pauseKey = storageKey || title || "carousel";
+  const [paused, setPaused] = useState(
+    () => !!storage.get(`${STORAGE_KEYS.CAROUSEL_PAUSED}:${pauseKey}`),
+  );
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused;
 
   const intervalRef = useRef(null);
   const isFocusedRef = useRef(false);
@@ -192,6 +210,7 @@ export default function TrendingCarousel({
 
   const startCycle = useCallback(() => {
     clearInterval(intervalRef.current);
+    if (pausedRef.current) return;
     intervalRef.current = setInterval(() => go(activeRef.current + 1), 4500);
   }, [go]);
 
@@ -219,7 +238,7 @@ export default function TrendingCarousel({
         }
       });
 
-      const should = bestEl === sectionEl && bestRatio > 0.1;
+      const should = bestEl === sectionEl && bestRatio > 0.1 && !paused;
       if (should && !isFocusedRef.current) {
         isFocusedRef.current = true;
         startCycle();
@@ -257,7 +276,14 @@ export default function TrendingCarousel({
       cancelAnimationFrame(id);
       clearInterval(intervalRef.current);
     };
-  }, [count, startCycle]);
+  }, [count, startCycle, paused]);
+
+  useEffect(() => {
+    storage.set(`${STORAGE_KEYS.CAROUSEL_PAUSED}:${pauseKey}`, paused ? 1 : 0);
+    if (paused) {
+      clearInterval(intervalRef.current);
+    }
+  }, [paused, pauseKey]);
 
   // ── Wheel ──────────────────────────────────────────────────────────────────
 
@@ -372,15 +398,27 @@ export default function TrendingCarousel({
 
   return (
     <div className="carousel-section" ref={sectionRef}>
-      <div className="section-title">
-        {titleHighlight ? (
-          <>
-            {title}&nbsp;
-            <span style={{ color: "var(--red)" }}>{titleHighlight}</span>
-          </>
-        ) : (
-          title
-        )}
+      <div className="section-title section-title--with-control">
+        <span>
+          {titleHighlight ? (
+            <>
+              {title}&nbsp;
+              <span style={{ color: "var(--red)" }}>{titleHighlight}</span>
+            </>
+          ) : (
+            title
+          )}
+        </span>
+        <button
+          type="button"
+          className={`carousel-autoplay${paused ? " is-paused" : ""}`}
+          onClick={() => setPaused((current) => !current)}
+          title={paused ? t("carousel.play") : t("carousel.pause")}
+          aria-label={paused ? t("carousel.play") : t("carousel.pause")}
+          aria-pressed={!paused}
+        >
+          {paused ? "▶" : "❚❚"}
+        </button>
       </div>
       {subtitle && <div className="section-subtitle">{subtitle}</div>}
 
@@ -393,7 +431,7 @@ export default function TrendingCarousel({
         <button
           className="carousel-btn carousel-btn--left"
           onClick={handlePrev}
-          aria-label="Previous"
+          aria-label={t("carousel.previous")}
         >
           <ChevronLeftIcon size={22} />
         </button>
@@ -424,7 +462,7 @@ export default function TrendingCarousel({
         <button
           className="carousel-btn carousel-btn--right"
           onClick={handleNext}
-          aria-label="Next"
+          aria-label={t("carousel.next")}
         >
           <ChevronRightIcon size={22} />
         </button>
@@ -436,7 +474,7 @@ export default function TrendingCarousel({
             key={`dot-${i}`}
             className={`carousel-dot${active === i ? " carousel-dot--active" : ""}`}
             onClick={() => handleDot(i)}
-            aria-label={`Go to ${i + 1}`}
+            aria-label={t("carousel.goTo", { n: i + 1 })}
           />
         ))}
         {count > 15 && (

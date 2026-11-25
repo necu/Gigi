@@ -1,11 +1,17 @@
 import { memo, useState, useEffect, useMemo, useCallback } from "react";
+import HomeSpotlight from "../components/HomeSpotlight";
 import MediaCard from "../components/MediaCard";
 import TrendingCarousel from "../components/TrendingCarousel";
-import { PlayIcon, StarIcon } from "../components/Icons";
-import { imgUrl, tmdbFetch } from "../utils/api";
+import { tmdbFetch } from "../utils/api";
 import { useRatings, getRatingForItem } from "../utils/useRatings";
 import { isRestricted } from "../utils/ageRating";
-import { loadHomeLayout, loadHomeViewMode } from "../utils/homeLayout";
+import { useT } from "../utils/i18n";
+import {
+  loadHomeLayout,
+  loadHomeViewMode,
+  saveHomeLayout,
+} from "../utils/homeLayout";
+import SectionFrame from "../components/SectionFrame";
 import {
   getHomeLanguage,
   readHomeFeedCache,
@@ -70,8 +76,13 @@ function HomePage({
   history,
   apiKey,
   savedEntries = [],
+  isSaved,
+  onToggleSave,
 }) {
-  const hero = useMemo(() => {
+  const t = useT();
+  // The spotlight builds its own rotating list. This fallback only keeps the
+  // header from ever collapsing while the first TMDB call is in flight.
+  const fallbackHero = useMemo(() => {
     const released = (trending || []).filter((item) => isReleased(item));
     const best = curateHomeItems(released, {
       limit: 1,
@@ -91,8 +102,24 @@ function HomePage({
   const [feedLang, setFeedLang] = useState(getHomeLanguage);
 
   // Load layout config (order + visibility) once on mount
-  const [layout] = useState(() => loadHomeLayout());
+  const [layout, setLayout] = useState(() => loadHomeLayout());
   const { order: rowOrder, visible: rowVisible } = layout;
+  const moveRow = useCallback((id, delta) => {
+    setLayout((current) => {
+      const visibleIds = current.order.filter((row) => current.visible[row]);
+      const from = visibleIds.indexOf(id);
+      const to = from + delta;
+      if (from < 0 || to < 0 || to >= visibleIds.length) return current;
+      const targetId = visibleIds[to];
+      const nextOrder = [...current.order];
+      const a = nextOrder.indexOf(id);
+      const b = nextOrder.indexOf(targetId);
+      [nextOrder[a], nextOrder[b]] = [nextOrder[b], nextOrder[a]];
+      saveHomeLayout(nextOrder, current.visible);
+      return { ...current, order: nextOrder };
+    });
+  }, []);
+  const visibleRowOrder = rowOrder.filter((row) => rowVisible[row]);
 
   const [viewMode] = useState(() => loadHomeViewMode());
 
@@ -466,53 +493,30 @@ function HomePage({
         </div>
       )}
 
-      {/* ── Hero (always first) ── */}
-      {!loading && hero && (
-        <div className="hero">
-          <div
-            className="hero-bg"
-            style={{
-              backgroundImage: `url(${imgUrl(hero.backdrop_path, "original")})`,
-            }}
-          />
-          <div className="hero-gradient" />
-          <div className="hero-content">
-            <div className="hero-type">Trending · Movie</div>
-            <div className="hero-title">{hero.title || hero.name}</div>
-            <div className="hero-meta">
-              <span className="hero-rating">
-                <StarIcon /> {hero.vote_average?.toFixed(1)}
-              </span>
-              <span>{hero.release_date?.slice(0, 4)}</span>
-            </div>
-            <div className="hero-overview">{hero.overview}</div>
-            <div className="hero-actions">
-              <button
-                className="btn btn-primary"
-                onClick={() => onSelect(hero)}
-              >
-                <PlayIcon /> Watch Now
-              </button>
-              <button
-                className="btn btn-secondary"
-                onClick={() => onSelect(hero)}
-              >
-                More Info
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* ── Smart spotlight (always first) ── */}
+      {!loading && (
+        <HomeSpotlight
+          apiKey={apiKey}
+          history={history}
+          savedEntries={savedEntries}
+          fallbackItem={fallbackHero}
+          onSelect={onSelect}
+          onToggleSave={onToggleSave}
+          isSaved={isSaved}
+        />
       )}
 
       {/* ── Rows in user-configured order ── */}
+      <div className="home-panels">
       {rowOrder.map((id) => {
         if (!rowVisible[id]) return null;
+        const content = (() => {
 
         if (id === "continue") {
           if (inProgress.length === 0) return null;
           return (
             <div key="continue" className="section">
-              <div className="section-title">Continue Watching</div>
+              <div className="section-title">{t("home.continue")}</div>
               <div className="cards-grid">
                 {inProgress.map((item) => {
                   const pk =
@@ -595,17 +599,18 @@ function HomePage({
           if (viewMode === "list")
             return renderList(
               "recent",
-              "Recently Added",
+              t("home.recent"),
               null,
               recentItems,
-              "Fresh additions to your library",
+              t("home.recentListSub"),
             );
           return (
             <TrendingCarousel
               key="recent"
+              storageKey="recent"
               items={recentItems}
-              title="Recently Added"
-              subtitle="Fresh additions to your library"
+              title={t("home.recent")}
+              subtitle={t("home.recentSub")}
               onSelect={onSelect}
               ratingsMap={enrichedRatingsMap}
             />
@@ -617,17 +622,18 @@ function HomePage({
           if (viewMode === "list")
             return renderList(
               "recommended",
-              "Recommended for You",
+              t("home.recommended"),
               null,
               filteredRecommendedItems,
-              "Personal picks and proven favourites",
+              t("home.recommendedListSub"),
             );
           return (
             <TrendingCarousel
               key="recommended"
+              storageKey="recommended"
               items={filteredRecommendedItems}
-              title="Recommended for You"
-              subtitle="Personal picks and proven favourites"
+              title={t("home.recommended")}
+              subtitle={t("home.recommendedSub")}
               onSelect={onSelect}
               ratingsMap={enrichedRatingsMap}
             />
@@ -639,17 +645,18 @@ function HomePage({
           if (viewMode === "list")
             return renderList(
               "trendingMovies",
-              "Trending Movies",
+              t("home.trendingMovies"),
               null,
               trendingMovieItems,
-              "The strongest films trending this week",
+              t("home.trendingMoviesListSub"),
             );
           return (
             <TrendingCarousel
               key="trendingMovies"
+              storageKey="trendingMovies"
               items={trendingMovieItems}
-              title="Trending Movies"
-              subtitle="The strongest films trending this week"
+              title={t("home.trendingMovies")}
+              subtitle={t("home.trendingMoviesSub")}
               onSelect={onSelect}
               ratingsMap={enrichedRatingsMap}
             />
@@ -661,17 +668,18 @@ function HomePage({
           if (viewMode === "list")
             return renderList(
               "trendingTV",
-              "Trending Series",
+              t("home.trendingTV"),
               null,
               trendingTVItems,
-              "The strongest series trending this week",
+              t("home.trendingTVListSub"),
             );
           return (
             <TrendingCarousel
               key="trendingTV"
+              storageKey="trendingTV"
               items={trendingTVItems}
-              title="Trending Series"
-              subtitle="The strongest series trending this week"
+              title={t("home.trendingTV")}
+              subtitle={t("home.trendingTVSub")}
               onSelect={onSelect}
               ratingsMap={enrichedRatingsMap}
             />
@@ -683,17 +691,18 @@ function HomePage({
           if (viewMode === "list")
             return renderList(
               "topRated",
-              "Top Rated",
+              t("home.topRated"),
               null,
               curatedTopRatedItems,
-              "The highest-rated films and series in the catalogue",
+              t("home.topRatedListSub"),
             );
           return (
             <TrendingCarousel
               key="topRated"
+              storageKey="topRated"
               items={curatedTopRatedItems}
-              title="Top Rated"
-              subtitle="The highest-rated films and series in the catalogue"
+              title={t("home.topRated")}
+              subtitle={t("home.topRatedSub")}
               onSelect={onSelect}
               ratingsMap={enrichedRatingsMap}
             />
@@ -701,7 +710,21 @@ function HomePage({
         }
 
         return null;
+        })();
+        return content ? (
+          <SectionFrame
+            key={id}
+            id={id}
+            index={visibleRowOrder.indexOf(id)}
+            count={visibleRowOrder.length}
+            onMove={moveRow}
+            order={rowOrder.indexOf(id)}
+          >
+            {content}
+          </SectionFrame>
+        ) : null;
       })}
+      </div>
     </div>
   );
 }

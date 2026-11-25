@@ -1,69 +1,17 @@
 import { useEffect, useMemo } from "react";
 import { imgUrl } from "../utils/api";
-
-const normalizeCastPerson = (person) => {
-  if (Array.isArray(person.roles)) {
-    return {
-      ...person,
-      characterList: person.roles.map((r) => r.character).filter(Boolean),
-    };
-  }
-
-  return {
-    ...person,
-    characterList: person.character ? [person.character] : [],
-  };
-};
-
-const normalizeCrewPerson = (person) => {
-  if (Array.isArray(person.jobs)) {
-    return {
-      ...person,
-      jobList: person.jobs.map((j) => j.job),
-    };
-  }
-
-  return {
-    ...person,
-    jobList: person.job ? [person.job] : [],
-  };
-};
-
-// Keep the first entry per person id (crew can list one person many times).
-const dedupeById = (people) => {
-  const seen = new Set();
-  return people.filter((p) => {
-    if (seen.has(p.id)) return false;
-    seen.add(p.id);
-    return true;
-  });
-};
-
-const getDirectors = (crew) =>
-  dedupeById(
-    crew
-      .map(normalizeCrewPerson)
-      .filter((person) => person.jobList.includes("Director")),
-  );
-
-const getByJobs = (crew, jobs) =>
-  dedupeById(
-    crew
-      .map(normalizeCrewPerson)
-      .filter((person) => person.jobList.some((job) => jobs.includes(job))),
-  );
-
-const getWriters = (crew) =>
-  getByJobs(crew, [
-    "Screenplay",
-    "Writer",
-    "Story",
-    "Teleplay",
-    "Novel",
-    "Characters",
-  ]);
+import { useT } from "../utils/i18n";
+import {
+  dedupeById,
+  getByJobs,
+  getDirectors,
+  getWriters,
+  normalizeCastPerson,
+  normalizeCrewPerson,
+} from "../utils/credits";
 
 function PersonCard({ person, onOpenPerson }) {
+  const t = useT();
   const subtitle =
     person.characterList?.join(", ") || person.jobList?.join(", ") || "";
   const content = (
@@ -95,8 +43,8 @@ function PersonCard({ person, onOpenPerson }) {
       type="button"
       className="cast-person cast-person--link"
       onClick={() => onOpenPerson(person)}
-      title={`Open ${person.name}'s page`}
-      aria-label={`Open ${person.name}'s page`}
+      title={t("cast.openPerson", { name: person.name })}
+      aria-label={t("cast.openPerson", { name: person.name })}
     >
       {content}
     </button>
@@ -129,6 +77,7 @@ export default function CastModal({
   title,
   onOpenPerson,
 }) {
+  const t = useT();
   useEffect(() => {
     const handler = (e) => {
       if (e.key === "Escape") onClose();
@@ -180,6 +129,7 @@ export default function CastModal({
   const otherCrew = useMemo(() => {
     const featured = new Set(
       [
+        ...normalizedCreators,
         ...directors,
         ...writers,
         ...cinematographers,
@@ -190,7 +140,15 @@ export default function CastModal({
     return dedupeById(crew.map(normalizeCrewPerson)).filter(
       (person) => !featured.has(person.id),
     );
-  }, [crew, directors, writers, cinematographers, composers, producers]);
+  }, [
+    crew,
+    normalizedCreators,
+    directors,
+    writers,
+    cinematographers,
+    composers,
+    producers,
+  ]);
 
   return (
     <div className="cast-overlay" onClick={onClose}>
@@ -198,15 +156,17 @@ export default function CastModal({
         className="cast-modal"
         role="dialog"
         aria-modal="true"
-        aria-label={`Cast & Crew — ${title}`}
+        aria-label={t("cast.title", { title })}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="cast-modal-header">
-          <span className="cast-modal-title">🎭 Cast &amp; Crew — {title}</span>
+          <span className="cast-modal-title">
+            🎭 {t("cast.title", { title })}
+          </span>
           <button
             className="cast-close-btn"
             onClick={onClose}
-            aria-label="Close"
+            aria-label={t("cast.close")}
           >
             ✕
           </button>
@@ -214,55 +174,55 @@ export default function CastModal({
 
         <div className="cast-modal-body">
           <Section
-            title="Creators"
+            title={t("cast.creators")}
             people={normalizedCreators}
             limit={4}
             onOpenPerson={onOpenPerson}
           />
           <Section
-            title="Directors"
+            title={t("cast.directors")}
             people={directors}
             limit={4}
             onOpenPerson={onOpenPerson}
           />
           <Section
-            title="Writers"
+            title={t("cast.writers")}
             people={writers}
-            limit={6}
+            limit={10}
             onOpenPerson={onOpenPerson}
           />
           <Section
-            title="Cinematography"
+            title={t("cast.cinematography")}
             people={cinematographers}
             limit={4}
             onOpenPerson={onOpenPerson}
           />
           <Section
-            title="Music"
+            title={t("cast.music")}
             people={composers}
             limit={4}
             onOpenPerson={onOpenPerson}
           />
           <Section
-            title="Producers"
+            title={t("cast.producers")}
             people={producers}
-            limit={6}
+            limit={10}
             onOpenPerson={onOpenPerson}
           />
           {normalizedCast.length > 0 ? (
             <Section
-              title="Cast"
+              title={t("cast.cast")}
               people={normalizedCast}
-              limit={20}
+              limit={30}
               onOpenPerson={onOpenPerson}
             />
           ) : (
-            <div className="cast-empty">No cast information available.</div>
+            <div className="cast-empty">{t("cast.empty")}</div>
           )}
           <Section
-            title="More crew"
+            title={t("cast.moreCrew")}
             people={otherCrew}
-            limit={30}
+            limit={80}
             onOpenPerson={onOpenPerson}
           />
         </div>

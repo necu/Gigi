@@ -1,6 +1,6 @@
 {
   "name": "gigi",
-  "version": "2.8.0",
+  "version": "2.8.1",
   "description": "Gigi Desktop App",
   "author": {
     "name": "truelockmc",
@@ -97,10 +97,12 @@
       "createStartMenuShortcut": true,
       "selectPerMachineByDefault": false,
       "license": "LICENSE",
-      "uninstallDisplayName": "Uninstall Gigi"
+      "uninstallDisplayName": "Uninstall Gigi",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico"
     },
     "win": {
-      "icon": "public/icon.png",
+      "icon": "build/icon.ico",
       "target": [
         "nsis"
       ]

@@ -35,6 +35,88 @@ const uniqById = (list) => {
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
+const SEARCH_STOP_WORDS = new Set([
+  "the",
+  "a",
+  "an",
+  "of",
+  "and",
+  "or",
+  "to",
+  "in",
+  "on",
+  "for",
+  "with",
+  "de",
+  "del",
+  "la",
+  "el",
+  "los",
+  "las",
+  "y",
+  "o",
+  "en",
+  "un",
+  "una",
+  "al",
+]);
+
+/** Classic edit distance, capped only by the strings themselves. */
+export function levenshtein(left, right) {
+  const a = String(left || "");
+  const b = String(right || "");
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+
+  let previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= a.length; i += 1) {
+    const current = [i];
+    for (let j = 1; j <= b.length; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      current[j] = Math.min(
+        previous[j] + 1,
+        current[j - 1] + 1,
+        previous[j - 1] + cost,
+      );
+    }
+    previous = current;
+  }
+  return previous[b.length];
+}
+
+export function similarity(left, right) {
+  const a = normalizeText(left);
+  const b = normalizeText(right);
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  if (a.includes(b) || b.includes(a)) {
+    return Math.min(a.length, b.length) / Math.max(a.length, b.length);
+  }
+  return 1 - levenshtein(a, b) / Math.max(a.length, b.length);
+}
+
+/**
+ * Fuzzy similarity that tolerates a typo in any word while still rewarding
+ * multi-word names: every query token picks its closest candidate token.
+ */
+export function fuzzyTokenScore(query, candidate) {
+  const queryTokens = normalizeText(query).split(" ").filter(Boolean);
+  const candidateTokens = normalizeText(candidate).split(" ").filter(Boolean);
+  if (!queryTokens.length || !candidateTokens.length) return 0;
+
+  let total = 0;
+  for (const queryToken of queryTokens) {
+    let best = 0;
+    for (const candidateToken of candidateTokens) {
+      best = Math.max(best, similarity(queryToken, candidateToken));
+    }
+    total += best;
+  }
+
+  return Math.max(total / queryTokens.length, similarity(query, candidate));
+}
+
 export function normalizeText(value) {
   return String(value || "")
     .toLowerCase()
@@ -261,28 +343,48 @@ function scoreCandidate(item, parsed, taste, boosts, key) {
   const yearMismatch =
     !!parsed.year && releaseYear > 0 && releaseYear !== parsed.year;
   let score = 0;
+  let strongTitleMatch = false;
   const reasons = [];
 
   if (title && title === full) {
     score += 170;
+    strongTitleMatch = true;
     reasons.push("Exact title match");
   } else if (title && title === parsed.normalized) {
     score += yearMismatch ? 45 : 145;
+    strongTitleMatch = true;
     reasons.push(
       yearMismatch ? "Title match (different year)" : "Exact title match",
     );
   } else if (title.startsWith(full)) {
     score += 90;
+    strongTitleMatch = true;
     reasons.push("Title starts with your search");
   } else if (title.includes(full)) {
     score += 55;
+    strongTitleMatch = true;
     reasons.push("Title match");
   } else if (title.startsWith(parsed.normalized)) {
     score += 60;
+    strongTitleMatch = true;
     reasons.push("Title starts with your search");
   } else if (title.includes(parsed.normalized)) {
     score += 35;
+    strongTitleMatch = true;
     reasons.push("Title match");
+  }
+
+  // TMDB itself is fuzzy, but its ordering is not. Re-rank by how close the
+  // title really is so "Incepton" or "Pulp Ficton" still surfaces the film.
+  const titleCloseness = fuzzyTokenScore(
+    parsed.fullText || parsed.text,
+    item.title || item.name,
+  );
+  if (titleCloseness >= 0.62) {
+    score += titleCloseness * 60;
+    if (!strongTitleMatch && titleCloseness >= 0.78) {
+      reasons.push("Close match");
+    }
   }
 
   const tokenHits = parsed.tokens.filter((token) => title.includes(token)).length;
@@ -326,28 +428,43 @@ function scoreCandidate(item, parsed, taste, boosts, key) {
 function pickPerson(people, parsed) {
   let best = null;
   let bestScore = 0;
+  let bestCloseness = 0;
   for (const person of people || []) {
     if (!person?.id || person.adult) continue;
     const name = normalizeText(person.name);
     if (!name) continue;
-    let score = 0;
-    if (name === parsed.normalized) score += 120;
-    else if (parsed.tokens.every((token) => name.includes(token))) score += 60;
-    else if (parsed.tokens.some((token) => name.includes(token))) score += 20;
-    score += Math.log10((person.popularity || 0) + 1) * 8;
+    const closeness = fuzzyTokenScore(parsed.text || parsed.fullText, person.name);
+    if (closeness < 0.58) continue;
+    let score = closeness * 120;
+    if (name === parsed.normalized || name === parsed.fullNormalized) {
+      score += 30;
+    } else if (
+      parsed.tokens.length > 0 &&
+      parsed.tokens.every((token) => name.includes(token))
+    ) {
+      score += 20;
+    }
+    score += Math.log10((person.popularity || 0) + 1) * 6;
     if (score > bestScore) {
       bestScore = score;
+      bestCloseness = closeness;
       best = person;
     }
   }
   // Never hijack a clear title search with an obscure person match.
-  if (!best || bestScore < 28) return null;
+  if (!best || bestScore < 55) return null;
   return {
     id: best.id,
     name: best.name,
     profile_path: best.profile_path || null,
     known_for_department: best.known_for_department || null,
     popularity: best.popularity || 0,
+    known_for: (best.known_for || [])
+      .slice(0, 2)
+      .map((credit) => credit?.title || credit?.name)
+      .filter(Boolean),
+    _fuzzy: Number(bestCloseness.toFixed(2)),
+    _match: Math.max(45, Math.min(99, Math.round(45 + bestCloseness * 54))),
   };
 }
 
@@ -365,34 +482,75 @@ export async function searchSmart({ query, apiKey, taste, boosts }) {
   // while "Dune 2021" must still find Dune through the year hint.
   const encodedFull = encodeURIComponent(parsed.fullText || parsed.text || query);
   const encodedText = encodeURIComponent(parsed.text || query);
-  const requests = [
-    tmdbFetch(
+  const empty = () => ({ results: [] });
+  const requests = {
+    multi: tmdbFetch(
       `/search/multi?query=${encodedFull}&include_adult=false&page=1`,
       apiKey,
-    ).catch(() => ({ results: [] })),
-    tmdbFetch(
+    ).catch(empty),
+    people: tmdbFetch(
       `/search/person?query=${encodedFull}&include_adult=false&page=1`,
       apiKey,
-    ).catch(() => ({ results: [] })),
-  ];
+    ).catch(empty),
+  };
   if (parsed.year) {
-    requests.push(
-      tmdbFetch(
-        `/search/movie?query=${encodedText}&year=${parsed.year}&include_adult=false&page=1`,
-        apiKey,
-      ).catch(() => ({ results: [] })),
-    );
+    requests.yearMovie = tmdbFetch(
+      `/search/movie?query=${encodedText}&year=${parsed.year}&include_adult=false&page=1`,
+      apiKey,
+    ).catch(empty);
     if (parsed.normalized !== parsed.fullNormalized) {
-      requests.push(
-        tmdbFetch(
-          `/search/multi?query=${encodedText}&include_adult=false&page=1`,
-          apiKey,
-        ).catch(() => ({ results: [] })),
-      );
+      requests.strippedMulti = tmdbFetch(
+        `/search/multi?query=${encodedText}&include_adult=false&page=1`,
+        apiKey,
+      ).catch(empty);
     }
   }
 
-  const [multi, people, yearData, strippedData] = await Promise.all(requests);
+  // A common typo leaves at least one word intact ("Pulp Ficton", "Leonrdo
+  // Dicaprio"). Searching the strongest tokens finds the right title/person
+  // even when the full query returns nothing; fuzzy scoring then ranks it.
+  const tokenQueries = parsed.tokens
+    .filter(
+      (token) => token.length >= 4 && !SEARCH_STOP_WORDS.has(token),
+    )
+    .sort((a, b) => b.length - a.length)
+    .slice(0, 2);
+
+  tokenQueries.forEach((token, index) => {
+    requests[`tokenMulti${index}`] = tmdbFetch(
+      `/search/multi?query=${encodeURIComponent(token)}&include_adult=false&page=1`,
+      apiKey,
+    ).catch(empty);
+    requests[`tokenPeople${index}`] = tmdbFetch(
+      `/search/person?query=${encodeURIComponent(token)}&include_adult=false&page=1`,
+      apiKey,
+    ).catch(empty);
+  });
+
+  // Single-word typos ("Incepton", "Scorcese") have no intact token. A short
+  // prefix gives TMDB enough of the real name to return candidates.
+  if (parsed.tokens.length === 1 && parsed.tokens[0].length >= 5) {
+    const prefix = parsed.tokens[0].slice(0, 4);
+    if (prefix !== parsed.tokens[0]) {
+      requests.prefixMulti = tmdbFetch(
+        `/search/multi?query=${encodeURIComponent(prefix)}&include_adult=false&page=1`,
+        apiKey,
+      ).catch(empty);
+      requests.prefixPeople = tmdbFetch(
+        `/search/person?query=${encodeURIComponent(prefix)}&include_adult=false&page=1`,
+        apiKey,
+      ).catch(empty);
+    }
+  }
+
+  const settled = await Promise.all(
+    Object.entries(requests).map(async ([key, request]) => [key, await request]),
+  );
+  const data = Object.fromEntries(settled);
+  const multi = data.multi;
+  const people = data.people;
+  const yearData = data.yearMovie;
+  const strippedData = data.strippedMulti;
 
   const pool = new Map();
   const add = (item, forcedType) => {
@@ -418,9 +576,13 @@ export async function searchSmart({ query, apiKey, taste, boosts }) {
     pool.set(key, { key, type, item: card });
   };
 
-  for (const item of multi.results || []) add(item);
+  for (const item of multi?.results || []) add(item);
   for (const item of yearData?.results || []) add(item, "movie");
   for (const item of strippedData?.results || []) add(item);
+  for (const key of Object.keys(data)) {
+    if (!key.startsWith("tokenMulti") && key !== "prefixMulti") continue;
+    for (const item of data[key]?.results || []) add(item);
+  }
 
   const scored = [...pool.values()]
     .map((candidate) => {
@@ -436,20 +598,44 @@ export async function searchSmart({ query, apiKey, taste, boosts }) {
     .sort((a, b) => b.score - a.score);
 
   const topScore = scored[0]?.score || 1;
-  const results = scored.slice(0, 14).map((candidate) => ({
-    ...candidate.item,
-    _search: {
-      score: Math.round(candidate.score),
-      match: matchPercent(candidate.score, topScore),
-      reasons: candidate.reasons.slice(0, 3),
-    },
-  }));
+  const results = scored.slice(0, 14).map((candidate) => {
+    const title = candidate.item.title || candidate.item.name;
+    const normalizedTitle = normalizeText(title);
+    const closeness = fuzzyTokenScore(
+      parsed.fullText || parsed.text,
+      title,
+    );
+    const titleAlreadyMatches =
+      normalizedTitle === parsed.fullNormalized ||
+      normalizedTitle === parsed.normalized ||
+      (parsed.normalized && normalizedTitle.includes(parsed.normalized));
+    return {
+      ...candidate.item,
+      _search: {
+        score: Math.round(candidate.score),
+        match: matchPercent(candidate.score, topScore),
+        reasons: candidate.reasons.slice(0, 3),
+        suggestion:
+          !titleAlreadyMatches && closeness >= 0.78 ? title : null,
+      },
+    };
+  });
 
   return {
     parsed,
     results,
     best: results[0] || null,
-    person: pickPerson(people?.results, parsed),
+    person: pickPerson(
+      [
+        ...(people?.results || []),
+        ...Object.keys(data)
+          .filter(
+            (key) => key.startsWith("tokenPeople") || key === "prefixPeople",
+          )
+          .flatMap((key) => data[key]?.results || []),
+      ],
+      parsed,
+    ),
   };
 }
 

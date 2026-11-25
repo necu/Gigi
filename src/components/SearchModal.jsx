@@ -9,6 +9,7 @@ import {
 } from "../utils/searchBrain";
 import { searchDb } from "../utils/searchDb";
 import { getWatchKey } from "../utils/watchlist";
+import { departmentLabel } from "../utils/people";
 import useFocusTrap from "../utils/useFocusTrap";
 
 const EMPTY_RECS = { items: [], loading: false, seedTitle: "" };
@@ -46,6 +47,7 @@ function SearchSkeleton() {
 export default function SearchModal({
   apiKey,
   onSelect,
+  onOpenPerson,
   onClose,
   offline,
   taste,
@@ -127,11 +129,15 @@ export default function SearchModal({
         setLoading(false);
         setHighlight(0);
 
-        if ((result.results || []).length > 0) {
+        if (
+          (result.results || []).length > 0 ||
+          result.person
+        ) {
           searchDb.record({
             query: trimmed,
-            resultCount: result.results.length,
-            kind: "text",
+            resultCount:
+              (result.results || []).length + (result.person ? 1 : 0),
+            kind: result.person && !result.best ? "person" : "text",
           });
         }
 
@@ -225,6 +231,12 @@ export default function SearchModal({
     [query, onSelect, onClose],
   );
 
+  const handleOpenPerson = useCallback(() => {
+    if (!data?.person) return;
+    onOpenPerson?.(data.person);
+    onClose?.();
+  }, [data, onOpenPerson, onClose]);
+
   const handleSaveAll = (items) => {
     const fresh = (items || []).filter((item) => !savedFor(item));
     if (fresh.length === 0) return;
@@ -259,7 +271,13 @@ export default function SearchModal({
       onClose?.();
       return;
     }
-    if (!results.length) return;
+    if (!results.length) {
+      if (event.key === "Enter" && data?.person) {
+        event.preventDefault();
+        handleOpenPerson();
+      }
+      return;
+    }
     if (event.key === "ArrowDown") {
       event.preventDefault();
       setHighlight((current) => Math.min(current + 1, results.length - 1));
@@ -340,9 +358,21 @@ export default function SearchModal({
 
           {!loading && error && <div className="search-empty">{error}</div>}
 
-          {!loading && !error && query.trim() && !best && (
+          {!loading && !error && query.trim() && !best && !data?.person && (
             <div className="search-empty">
               No matches for “{query.trim()}”. Try fewer words or add a year.
+            </div>
+          )}
+
+          {best?._search?.suggestion && (
+            <div className="search-correction">
+              <span>Closest match:</span>{" "}
+              <button
+                type="button"
+                onClick={() => setQuery(best._search.suggestion)}
+              >
+                {best._search.suggestion}
+              </button>
             </div>
           )}
 
@@ -518,35 +548,92 @@ export default function SearchModal({
             </>
           )}
 
-          {data?.person && personPicks.length > 0 && (
-            <div className="search-section">
-              <div className="search-section__head">
-                <div>
-                  <div className="search-section__title">
-                    With {data.person.name}
-                  </div>
-                  <div className="search-section__sub">
-                    Explore the filmography without leaving the search.
-                  </div>
+          {data?.person && (
+            <div className="search-section search-section--person">
+              <div className="search-person">
+                <div className="search-person__photo">
+                  {data.person.profile_path ? (
+                    <img
+                      src={imgUrl(data.person.profile_path, "w185")}
+                      alt=""
+                      loading="lazy"
+                    />
+                  ) : (
+                    <span>{data.person.name?.[0] || "?"}</span>
+                  )}
                 </div>
-                <button
-                  className="btn btn-ghost"
-                  onClick={() => handleSaveAll(personPicks)}
-                >
-                  Save all
-                </button>
+                <div className="search-person__info">
+                  <div className="search-person__kicker">
+                    {data.person._match
+                      ? `Person match · ${data.person._match}%`
+                      : "Person"}
+                  </div>
+                  <div className="search-person__name">
+                    {data.person.name}
+                  </div>
+                  <div className="search-person__meta">
+                    {[
+                      data.person.known_for_department
+                        ? departmentLabel(data.person.known_for_department)
+                        : null,
+                      data.person.known_for?.length
+                        ? `Known for ${data.person.known_for.join(", ")}`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </div>
+                  {data.person._fuzzy < 0.98 && (
+                    <div className="search-person__note">
+                      Interpreted as “{data.person.name}”
+                    </div>
+                  )}
+                </div>
+                <div className="search-person__actions">
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={handleOpenPerson}
+                  >
+                    Open profile
+                  </button>
+                </div>
               </div>
-              <div className="smart-strip">
-                {personPicks.map((item) => (
-                  <SmartCard
-                    key={`${item.media_type}_${item.id}`}
-                    item={item}
-                    saved={savedFor(item)}
-                    onOpen={handleOpen}
-                    onSave={handleToggleSave}
-                  />
-                ))}
-              </div>
+
+              {personPicks.length > 0 && (
+                <>
+                  <div
+                    className="search-section__head"
+                    style={{ marginTop: 14 }}
+                  >
+                    <div>
+                      <div className="search-section__title">
+                        With {data.person.name}
+                      </div>
+                      <div className="search-section__sub">
+                        Explore the filmography without leaving the search.
+                      </div>
+                    </div>
+                    <button
+                      className="btn btn-ghost"
+                      onClick={() => handleSaveAll(personPicks)}
+                    >
+                      Save all
+                    </button>
+                  </div>
+                  <div className="smart-strip">
+                    {personPicks.map((item) => (
+                      <SmartCard
+                        key={`${item.media_type}_${item.id}`}
+                        item={item}
+                        saved={savedFor(item)}
+                        onOpen={handleOpen}
+                        onSave={handleToggleSave}
+                      />
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
           )}
 

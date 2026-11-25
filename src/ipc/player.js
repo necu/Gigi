@@ -1,6 +1,9 @@
 // ── IPC: Player launch, window controls, auto-updater ─────────────────────────
 
 const { ipcMain, shell, app } = require("electron");
+const PLAYER_MENU_GUARD_JS = require("./playerGuard");
+// Player WebContents whose console/media bridge was already attached.
+const playerMediaHooked = new WeakSet();
 const { spawn, spawnSync } = require("child_process");
 const path = require("path");
 const fs = require("fs");
@@ -904,6 +907,332 @@ function register(getMainWindow, { writeSecretMigration }) {
       return null;
     } catch {
       return null;
+    }
+  });
+
+  // ── Control the video inside any nested player iframe ───────────────────
+  // A webview.executeJavaScript only reaches the top frame. Sources such as
+  // VidSrc nest the real <video> in a cross-origin iframe, so the custom
+  // player deck needs the same frame-walking trick as query-video-progress.
+  // Only the largest video in the frame is controlled; ads and background
+  // previews are ignored.
+  ipcMain.handle("control-video", async (_, { webContentsId, action, value }) => {
+    try {
+      const { webContents } = require("electron");
+      const wc = webContents.fromId(webContentsId);
+      if (!wc || wc.isDestroyed()) return null;
+
+      const allFrames = [];
+      const collect = (frame) => {
+        allFrames.push(frame);
+        for (const child of frame.frames || []) collect(child);
+      };
+      collect(wc.mainFrame);
+
+      // Providers commonly fullscreen a cross-origin iframe. A webview-level
+      // executeJavaScript only reaches the top frame, so leave the guest's
+      // native fullscreen from every frame instead.
+      if (action === "exit-fullscreen") {
+        const results = await Promise.all(
+          allFrames.map(async (frame) => {
+            try {
+              return await frame.executeJavaScript(
+                "(() => { try { if (document.fullscreenElement) { const p = document.exitFullscreen?.(); if (p && p.catch) p.catch(() => {}); return true; } } catch (e) {} return false; })()",
+              );
+            } catch {
+              return false;
+            }
+          }),
+        );
+        return results.some(Boolean);
+      }
+
+      const STATE_JS = `
+        (() => {
+          const videos = Array.from(document.querySelectorAll('video'));
+          if (!videos.length) return null;
+          videos.sort((a, b) => {
+            const area = (v) => Math.max(1, v.clientWidth || 0) * Math.max(1, v.clientHeight || 0);
+            return area(b) - area(a);
+          });
+          const v = videos[0];
+          const area = Math.max(1, v.clientWidth || 0) * Math.max(1, v.clientHeight || 0);
+          const visible = (el) => {
+            if (!el || !el.getBoundingClientRect) return false;
+            const r = el.getBoundingClientRect();
+            const style = getComputedStyle(el);
+            return r.width > 4 && r.height > 4 && style.visibility !== 'hidden' && style.display !== 'none' && Number(style.opacity || 1) > 0.01;
+          };
+          // Only real menu containers count. Provider settings drawers and
+          // subtitle panels stay in the DOM while closed and used to hide the
+          // deck forever with the old broad class match.
+          const menuOpen = !!window.__gigiMenuOpen || Array.from(document.querySelectorAll('[role="menu"], [role="listbox"], [class*="dropdown"], [class*="Dropdown"], [aria-expanded="true"]')).some((el) => {
+            if (el === v || !visible(el)) return false;
+            const r = el.getBoundingClientRect();
+            const onScreen = r.bottom > 0 && r.right > 0 && r.left < innerWidth && r.top < innerHeight;
+            if (!onScreen) return false;
+            return el.querySelectorAll('button, [role="menuitem"], li').length >= 2;
+          });
+          return {
+            found: true,
+            area,
+            paused: !!v.paused,
+            currentTime: Number.isFinite(v.currentTime) ? v.currentTime : 0,
+            duration: Number.isFinite(v.duration) ? v.duration : 0,
+            volume: Number.isFinite(v.volume) ? v.volume : 1,
+            muted: !!v.muted,
+            playbackRate: Number.isFinite(v.playbackRate) ? v.playbackRate : 1,
+            readyState: v.readyState || 0,
+            menuOpen,
+          };
+        })()
+      `;
+
+      let targetFrame = null;
+      let state = null;
+      let bestScore = -1;
+      for (const frame of allFrames) {
+        try {
+          const result = await frame.executeJavaScript(STATE_JS);
+          if (result?.found) {
+            const score =
+              (Number(result.area) || 0) * 10 +
+              Math.min(Number(result.duration) || 0, 7200);
+            if (score > bestScore) {
+              bestScore = score;
+              targetFrame = frame;
+              state = result;
+            }
+          }
+        } catch {}
+      }
+      if (!targetFrame) return null;
+      if (!action || action === "state") return state;
+
+      // The provider's bottom deck is hidden so only our deck shows, but its
+      // quality/audio/subtitle drawer must stay reachable. #settingsBtn is
+      // usually display:none yet its handler still toggles that drawer.
+      if (action === "provider-menu") {
+        const MENU_JS = `(() => {
+          const visible = (el) => {
+            if (!el || !el.getBoundingClientRect) return false;
+            const r = el.getBoundingClientRect();
+            const s = getComputedStyle(el);
+            return r.width > 80 && r.height > 80 && r.right > 0 && r.bottom > 0 &&
+              r.left < innerWidth && r.top < innerHeight &&
+              s.display !== 'none' && s.visibility !== 'hidden' && Number(s.opacity || 1) > 0.05;
+          };
+          const panels = Array.from(document.querySelectorAll(
+            '#settingsPanel, #subtitlesPanel, .settings-view, .subs-panel, [class*="settings-panel"], [class*="quality-menu"], [class*="qualityMenu"]'
+          ));
+          const triggers = [
+            '#settingsBtn', '#lbQuality', '#lbSubs', '#subtitlesBtn',
+            'button[aria-label*="setting" i]', 'button[aria-label*="subtitles" i]',
+            'button[aria-label*="caption" i]', 'button[aria-label*="quality" i]',
+            'button[aria-label*="audio" i]', '[role="button"][aria-label*="setting" i]',
+            '[role="button"][aria-label*="subtitles" i]', '[data-tip*="quality" i]',
+            '[data-tip*="subtitle" i]'
+          ];
+          let trigger = null;
+          for (const sel of triggers) {
+            const el = document.querySelector(sel);
+            if (el) { trigger = el; break; }
+          }
+          if (!trigger) {
+            const re = /quality|calidad|subtitle|subtit|caption|audio|setting|ajustes|track|idioma|language/i;
+            trigger = Array.from(document.querySelectorAll('button, [role="button"]')).find((el) => {
+              const label = [el.id, el.className, el.getAttribute('aria-label'), el.getAttribute('title'), el.innerText].filter(Boolean).join(' ');
+              return re.test(label);
+            }) || null;
+          }
+          if (!trigger) return { ok: false, open: panels.some(visible) };
+          trigger.click();
+          return { ok: true, open: panels.some(visible), id: trigger.id || null };
+        })()`;
+        const frames = [targetFrame, ...allFrames.filter((frame) => frame !== targetFrame)];
+        for (const frame of frames) {
+          try {
+            const result = await frame.executeJavaScript(MENU_JS, true);
+            if (result?.ok) {
+              // Let the drawer finish its short transition before returning.
+              await new Promise((resolve) => setTimeout(resolve, 220));
+              return result;
+            }
+          } catch {}
+        }
+        // No known settings trigger: briefly reveal the provider's own deck
+        // instead of silently dropping quality/audio/subtitle access.
+        try {
+          await targetFrame.executeJavaScript(
+            "(() => { const d = document.documentElement; d.setAttribute('data-gigi-show-chrome', '1'); clearTimeout(window.__gigiChromeReveal); window.__gigiChromeReveal = setTimeout(() => d.removeAttribute('data-gigi-show-chrome'), 10000); return true; })()",
+            true,
+          );
+          return { ok: true, revealed: true };
+        } catch {}
+        return { ok: false };
+      }
+
+      // The provider's own deck is hidden, and with it the "Volume boost"
+      // switch (Off / 2× / 3×) that made dialogue audible. Its controls still
+      // exist in the settings drawer, so the deck can drive them directly.
+      if (action === "audio-boost") {
+        const wanted = [1, 2, 3].includes(Number(value)) ? Number(value) : 0;
+        const boostJs = (want) => `(() => {
+          const buttons = Array.from(document.querySelectorAll(
+            '#boostRow button[data-boost], .seg.boost button[data-boost], [class*="boost"] button[data-boost]'
+          ));
+          if (!buttons.length) return { supported: false };
+          const read = () => {
+            const active = buttons.find((b) => b.classList.contains('active')) ||
+              buttons.find((b) => b.getAttribute('aria-pressed') === 'true');
+            return active ? Number(active.dataset.boost) || 1 : 1;
+          };
+          const before = read();
+          if (!${want}) return { supported: true, level: before };
+          const target = buttons.find((b) => Number(b.dataset.boost) === ${want});
+          if (!target) return { supported: true, level: before };
+          if (!target.classList.contains('active')) target.click();
+          return { supported: true, level: ${want} };
+        })()`;
+        const frames = [targetFrame, ...allFrames.filter((frame) => frame !== targetFrame)];
+        for (const frame of frames) {
+          try {
+            const result = await frame.executeJavaScript(boostJs(wanted), true);
+            if (!result?.supported) continue;
+            if (!wanted) return result;
+            // Let the provider re-render its active class, then report the
+            // value it actually applied instead of assuming it worked.
+            await new Promise((resolve) => setTimeout(resolve, 140));
+            try {
+              const confirmed = await frame.executeJavaScript(boostJs(0), true);
+              if (confirmed?.supported) return confirmed;
+            } catch {}
+            return result;
+          } catch {}
+        }
+        return { supported: false };
+      }
+
+      const safeNumber = Number(value);
+      let command = "";
+      if (action === "toggle-play") {
+        // Read the current state inside the frame. Deciding from the earlier
+        // snapshot made two quick clicks both resolve to "play".
+        command = "if (v.paused) { v.play().catch(() => {}); } else { v.pause(); }";
+      } else if (action === "seek") {
+        command = `v.currentTime = Math.max(0, Math.min(v.duration || 1e9, v.currentTime + ${Number.isFinite(safeNumber) ? safeNumber : 0}));`;
+      } else if (action === "seek-to") {
+        command = `v.currentTime = Math.max(0, Math.min(v.duration || 1e9, ${Number.isFinite(safeNumber) ? safeNumber : 0}));`;
+      } else if (action === "set-volume") {
+        command = `v.volume = Math.max(0, Math.min(1, ${Number.isFinite(safeNumber) ? safeNumber : 1})); v.muted = false;`;
+      } else if (action === "toggle-mute") {
+        command = "v.muted = !v.muted;";
+      } else if (action === "set-rate") {
+        command = `v.playbackRate = Math.max(0.25, Math.min(4, ${Number.isFinite(safeNumber) ? safeNumber : 1}));`;
+      } else if (action === "play") {
+        command = "v.play().catch(() => {});";
+      } else if (action === "pause") {
+        command = "v.pause();";
+      }
+
+      if (!command) return state;
+      try {
+        await targetFrame.executeJavaScript(
+          `(() => { const videos = Array.from(document.querySelectorAll('video'));
+            if (!videos.length) return null;
+            videos.sort((a, b) => {
+              const area = (v) => Math.max(1, v.clientWidth || 0) * Math.max(1, v.clientHeight || 0);
+              return area(b) - area(a);
+            });
+            const v = videos[0]; ${command}
+            return { currentTime: v.currentTime, paused: v.paused };
+          })()`,
+        );
+      } catch {}
+
+      // Read the resulting state after the command so the deck never invents
+      // a local value that disagrees with the real video element.
+      try {
+        return await targetFrame.executeJavaScript(STATE_JS);
+      } catch {
+        return state;
+      }
+    } catch {
+      return null;
+    }
+  });
+
+  // The quality/audio menus live inside the provider's iframe. Inject the
+  // outside-click guard into every frame, and make it idempotent so the deck
+  // can safely call this on dom-ready and while a stream is playing.
+  ipcMain.handle("install-player-guard", async (_, webContentsId) => {
+    try {
+      const { webContents } = require("electron");
+      const wc = webContents.fromId(webContentsId);
+      if (!wc || wc.isDestroyed()) return false;
+
+      // Forward the media events reported by the injected guard. The prefix
+      // check keeps ordinary site logs out of the IPC channel.
+      if (!playerMediaHooked.has(wc)) {
+        playerMediaHooked.add(wc);
+        wc.on("console-message", (event, level, message) => {
+          const text =
+            typeof event?.message === "string"
+              ? event.message
+              : typeof message === "string"
+                ? message
+                : typeof level === "string"
+                  ? level
+                  : "";
+          if (!text) return;
+          const target = getMainWindow?.();
+          if (!target || target.isDestroyed?.()) return;
+          if (text.startsWith("__GIGI_MEDIA__")) {
+            try {
+              const state = JSON.parse(text.slice("__GIGI_MEDIA__".length));
+              // Drop the legacy `menuOpen` field if an older guard is loaded.
+              delete state.menuOpen;
+              target.webContents.send("player-media-state", {
+                wcId: wc.id,
+                state,
+              });
+            } catch {}
+          } else if (text.includes("__GIGI_TOGGLE_FULLSCREEN__")) {
+            target.webContents.send("player-command", {
+              wcId: wc.id,
+              command: "toggle-fullscreen",
+            });
+          } else if (text.includes("__GIGI_EXIT_FULLSCREEN__")) {
+            target.webContents.send("player-command", {
+              wcId: wc.id,
+              command: "exit-fullscreen",
+            });
+          } else if (text.includes("__GIGI_POINTER__")) {
+            target.webContents.send("player-command", {
+              wcId: wc.id,
+              command: "pointer-move",
+            });
+          }
+        });
+      }
+
+      const allFrames = [];
+      const collect = (frame) => {
+        allFrames.push(frame);
+        for (const child of frame.frames || []) collect(child);
+      };
+      collect(wc.mainFrame);
+
+      await Promise.all(
+        allFrames.map(async (frame) => {
+          try {
+            await frame.executeJavaScript(PLAYER_MENU_GUARD_JS);
+          } catch {}
+        }),
+      );
+      return true;
+    } catch {
+      return false;
     }
   });
 }

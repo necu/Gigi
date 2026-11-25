@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { useSeasonalEvent } from "./seasonalEvents.jsx";
+import { useT } from "../utils/i18n";
 import {
   GigiLogo,
   HomeIcon,
@@ -14,10 +15,10 @@ import {
 } from "./Icons";
 
 const NAV_ITEMS = [
-  { page: "home", label: "Home", icon: HomeIcon },
-  { page: "playlists", label: "Playlists", icon: PlaylistIcon },
-  { page: "history", label: "Library & History", icon: HistoryIcon },
-  { page: "downloads", label: "Downloads", icon: DownloadsQueueIcon },
+  { page: "home", labelKey: "nav.home", icon: HomeIcon },
+  { page: "playlists", labelKey: "nav.playlists", icon: PlaylistIcon },
+  { page: "history", labelKey: "nav.library", icon: HistoryIcon },
+  { page: "downloads", labelKey: "nav.downloads", icon: DownloadsQueueIcon },
 ];
 
 function Sidebar({
@@ -30,6 +31,7 @@ function Sidebar({
   onShowShortcuts,
 }) {
   const seasonalEvent = useSeasonalEvent();
+  const t = useT();
 
   return (
     <div className="sidebar">
@@ -53,18 +55,18 @@ function Sidebar({
       </div>
 
       {canGoBack && (
-        <SideBtn onClick={onBack} icon={<BackIcon />} label="Back (Ctrl+Z)" />
+        <SideBtn onClick={onBack} icon={<BackIcon />} label={t("nav.back")} />
       )}
 
-      <SideBtn onClick={onSearch} icon={<SearchIcon />} label="Search  (⌘F)" />
+      <SideBtn onClick={onSearch} icon={<SearchIcon />} label={t("nav.search")} />
 
-      {NAV_ITEMS.map(({ page: target, label, icon: Icon }) => (
+      {NAV_ITEMS.map(({ page: target, labelKey, icon: Icon }) => (
         <SideBtn
           key={target}
           active={page === target}
           onClick={() => onNavigate(target)}
           icon={<Icon />}
-          label={label}
+          label={t(labelKey)}
           badge={
             target === "downloads" && activeDownloads > 0
               ? activeDownloads
@@ -77,22 +79,22 @@ function Sidebar({
         <SideBtn
           onClick={onShowShortcuts}
           icon={<HelpIcon />}
-          label="Help & Shortcuts (?)"
+          label={t("nav.help")}
         />
         <SideBtn
           active={page === "settings"}
           onClick={() => onNavigate("settings")}
           icon={<SettingsIcon />}
-          label="Settings"
+          label={t("nav.settings")}
         />
         <button
           className="sidebar-btn"
           onClick={() => window.electron?.quitApp?.()}
-          title="Quit App"
+          title={t("nav.quit")}
           style={{ color: "#e53e3e", marginTop: 4 }}
         >
           <QuitIcon />
-          <span className="tooltip">Quit App</span>
+          <span className="tooltip">{t("nav.quit")}</span>
         </button>
       </div>
     </div>

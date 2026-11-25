@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import SmartCard from "./SmartCard";
 import { imgUrl } from "../utils/api";
 import { useLibraryRecommendations } from "../utils/useLibraryBrain";
+import { useT } from "../utils/i18n";
 
 function groupSagas(entries) {
   const map = new Map();
@@ -36,6 +37,7 @@ function groupSagas(entries) {
 
 /** Franchises detected in the library, each one acting as a playlist. */
 export function SagaShelf({ entries, onOpenPlaylist }) {
+  const t = useT();
   const sagas = useMemo(() => groupSagas(entries), [entries]);
   if (!sagas.length || !onOpenPlaylist) return null;
 
@@ -43,11 +45,8 @@ export function SagaShelf({ entries, onOpenPlaylist }) {
     <div className="smart-shelf">
       <div className="smart-shelf__head">
         <div>
-          <div className="section-title">Sagas & playlists</div>
-          <div className="smart-shelf__sub">
-            Franchises detected in your library. Open one to load every part as a
-            playlist.
-          </div>
+          <div className="section-title">{t("smart.sagas")}</div>
+          <div className="smart-shelf__sub">{t("smart.sagasSub")}</div>
         </div>
       </div>
       <div className="smart-strip">
@@ -97,6 +96,7 @@ export function ForYouShelf({
   onAddMany,
   onSelect,
 }) {
+  const t = useT();
   const { items, seeds, loading, error, reload } = useLibraryRecommendations({
     entries,
     apiKey,
@@ -111,11 +111,11 @@ export function ForYouShelf({
     <div className="smart-shelf">
       <div className="smart-shelf__head">
         <div>
-          <div className="section-title">Recommended for you</div>
+          <div className="section-title">{t("smart.recommended")}</div>
           <div className="smart-shelf__sub">
             {seeds.length > 0
               ? `Because you saved ${seeds.join(" and ")} — cast, directors, music, photography and themes.`
-              : "Built from your ratings, genres and the people in your library."}
+              : t("smart.recommendedSub")}
           </div>
         </div>
         <div className="smart-shelf__actions">
@@ -125,7 +125,7 @@ export function ForYouShelf({
             onClick={reload}
             disabled={loading}
           >
-            {loading ? "Finding…" : "Refresh"}
+            {loading ? t("smart.finding") : t("common.refresh")}
           </button>
           {pending.length > 0 && (
             <button
@@ -133,7 +133,7 @@ export function ForYouShelf({
               className="btn btn-secondary"
               onClick={() => onAddMany?.(pending)}
             >
-              Save all ({pending.length})
+              {t("smart.saveAll", { n: pending.length })}
             </button>
           )}
         </div>

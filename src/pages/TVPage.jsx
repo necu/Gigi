@@ -75,6 +75,7 @@ import {
   getRatingCountry,
 } from "../utils/ageRating";
 import CastModal from "../components/CastModal";
+import CastPanel from "../components/CastPanel";
 import { useCredits } from "../utils/useCredits";
 import {
   GAMEPAD_PLAYER_SCRIPT,
@@ -83,6 +84,9 @@ import {
   GAMEPAD_CLEANUP_JS,
 } from "../utils/playerGamepadScript";
 import { useSourceId } from "../utils/useSourceId";
+import PlayerDeck from "../components/PlayerDeck";
+import { useT } from "../utils/i18n";
+import { getIntroSkipMode } from "../utils/playerPreferences";
 import { setPlayerGamepadActive } from "../utils/gamepadPlayerState";
 import HiAnimeLoader from "../components/HiAnimeLoader";
 
@@ -420,6 +424,9 @@ export default function TVPage({
   saveProgress,
   onBack,
   onSettings,
+  resumeSession,
+  onPlaybackSession,
+  registerPlayerBack,
   onDownloadStarted,
   watched,
   onMarkWatched,
@@ -432,11 +439,18 @@ export default function TVPage({
   onToggleSaveItem,
   onOpenPerson,
 }) {
+  const t = useT();
   const [details, setDetails] = useState(null);
   const [seasonData, setSeasonData] = useState(null);
   const [failedSeasons, setFailedSeasons] = useState(() => new Set()); // season numbers which give 404 on TMDB
   const [selectedSeason, setSelectedSeason] = useState(() =>
-    item.season != null ? Number(item.season) : 1,
+    resumeSession?.page === "tv" &&
+    Number(resumeSession.id) === Number(item.id) &&
+    resumeSession.season != null
+      ? Number(resumeSession.season)
+      : item.season != null
+        ? Number(item.season)
+        : 1,
   );
   const [selectedEp, setSelectedEp] = useState(null);
   const [playing, setPlaying] = useState(false);
@@ -493,19 +507,22 @@ export default function TVPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [srcId.id]);
   const [playerFullscreen, setPlayerFullscreen] = useState(false);
+  const fullscreenExitRef = useRef(false);
   const [pipOpen, setPipOpen] = useState(false);
   const pipUrlRef = useRef(null);
   const pipWebContentsIdRef = useRef(null); // cached WebContents ID of the pop-out window
   const [menuPos, setMenuPos] = useState(null);
   // AniSkip
   const [skipTimings, setSkipTimings] = useState(null); // { intro?, outro? }
-  const [skipPrompt, setSkipPrompt] = useState(null); // "intro" | "outro" | null
-  const [introSkipMode] = useState(
-    () => storage.get(STORAGE_KEYS.INTRO_SKIP_MODE) || "off",
-  );
+  const [introSkipMode] = useState(() => getIntroSkipMode());
   const sourceRef = useRef(null);
   const playerWrapRef = useRef(null);
   const webviewRef = useRef(null);
+  const resumeAppliedRef = useRef(false);
+  const episodeRestoredRef = useRef(false);
+  // A live player reports its position to App, which may re-render this page.
+  // Only the session present at mount is a restore request.
+  const initialResumeRef = useRef(resumeSession);
   // Always-current refs for interval callbacks, avoids stale closures without restarting the interval
   const saveProgressRef = useRef(saveProgress);
   saveProgressRef.current = saveProgress;
@@ -664,17 +681,28 @@ export default function TVPage({
 
   useEffect(() => {
     if (!apiKey || !item.id) return;
+    // Returning from Settings must survive the AniList metadata refresh; a
+    // second season fetch should not close the player it just restored.
+    const keepResumedEpisode =
+      episodeRestoredRef.current &&
+      initialResumeRef.current?.playing &&
+      initialResumeRef.current.page === "tv" &&
+      Number(initialResumeRef.current.id) === Number(item.id);
     // Episode group data already contains all episodes -> no TMDB season fetch
     if (episodeGroupData) {
-      setSelectedEp(null);
-      setPlaying(false);
+      if (!keepResumedEpisode) {
+        setSelectedEp(null);
+        setPlaying(false);
+      }
       setSeasonData(null);
       setLoadingSeason(false);
       return;
     }
     setLoadingSeason(true);
-    setSelectedEp(null);
-    setPlaying(false);
+    if (!keepResumedEpisode) {
+      setSelectedEp(null);
+      setPlaying(false);
+    }
     setSeasonData(null); // clear stale episodes immediately
     // AniList virtual seasons on a single-season show: always fetch TMDB S1.
     const tmdbSeasonToFetch =
@@ -1313,8 +1341,7 @@ export default function TVPage({
   // ── AniSkip: fetch timings when episode changes ───────────────────────────
   useEffect(() => {
     setSkipTimings(null);
-    setSkipPrompt(null);
-    if (introSkipMode === "off" || !isAsync || !isAnime) return;
+    if (introSkipMode === "off" || !isAnime) return;
     const anilistId = anilistData?.idMal;
     const epNum = selectedEp?.episode_number;
     if (!anilistId || !epNum) return;
@@ -1334,49 +1361,12 @@ export default function TVPage({
     introSkipMode,
   ]);
 
-  // ── AniSkip: auto-skip or show manual prompt ─────────────────
-  // ── AniSkip: manual skip handler ─────────────────────────────────────────
-  const handleManualSkip = useCallback(async () => {
-    if (!skipPrompt || !skipTimings?.[skipPrompt]) return;
-    const rawEnd = skipTimings[skipPrompt].endTime;
-    const endTime = Number(rawEnd);
-    if (!Number.isFinite(endTime)) return;
-    const wv = webviewRef.current;
-    if (!wv) return;
-    try {
-      await wv.executeJavaScript(
-        `(() => { const v = document.querySelector('video'); if (v) v.currentTime = ${endTime}; })()`,
-      );
-    } catch {}
-    setSkipPrompt(null);
-  }, [skipPrompt, skipTimings]);
-
-  // Use webview before-input-event so Enter reaches main-ui before the webview
-  // handles it (avoids the webview's Space/Enter play-pause intercepting it).
-  useEffect(() => {
-    if (!skipPrompt) return;
-    const wv = webviewRef.current;
-    if (!wv) return;
-    const handler = (e) => {
-      if (e.key === "Return" && e.type === "keyDown") {
-        handleManualSkip();
-      }
-    };
-    wv.addEventListener("before-input-event", handler);
-    return () => wv.removeEventListener("before-input-event", handler);
-  }, [skipPrompt, handleManualSkip]);
-
   // Unified progress/skip timing tick for HiAnime and other sources.
   // Skip detection runs every tick, progress is saved every 5th tick (5s).
   useEffect(() => {
-    const aniSkipActive =
-      introSkipMode !== "off" && playing && !!skipTimings && isAsync;
-
-    if (!aniSkipActive) setSkipPrompt(null);
     if (!playing || !currentProgressKey) return;
 
-    const TICK = aniSkipActive ? 1000 : 5000;
-    let tickCount = 0;
+    const TICK = 5000;
     let interval = null;
 
     const timer = setTimeout(() => {
@@ -1422,36 +1412,7 @@ export default function TVPage({
             `);
           }
 
-          // ── AniSkip logic: runs every tick (only when aniSkipActive) ────
-          if (aniSkipActive && result?.currentTime != null) {
-            const ct = result.currentTime;
-            const { intro, outro } = skipTimings;
-            const inIntro =
-              intro && ct >= intro.startTime && ct < intro.endTime - 1;
-            const inOutro =
-              outro && ct >= outro.startTime && ct < outro.endTime - 1;
-            const activeSegment = inIntro ? "intro" : inOutro ? "outro" : null;
-            if (!activeSegment) {
-              setSkipPrompt(null);
-            } else if (introSkipMode === "auto") {
-              setSkipPrompt(null);
-              const endTime = Number(skipTimings[activeSegment].endTime);
-              if (Number.isFinite(endTime)) {
-                try {
-                  await wv.executeJavaScript(
-                    `(() => { const v = document.querySelector('video'); if (v) v.currentTime = ${endTime}; })()`,
-                  );
-                } catch {}
-              }
-            } else {
-              setSkipPrompt(activeSegment);
-            }
-          }
-
-          // ── Progress logic: every 5s regardless of tick rate ────────────
-          tickCount++;
-          if (aniSkipActive && tickCount % 5 !== 0) return;
-
+          // ── Progress logic ─────────────────────────────────────────────
           if (result && result.duration > 0) {
             durationRef.current = result.duration;
             const ct = result.currentTime;
@@ -1495,6 +1456,16 @@ export default function TVPage({
             saveProgressRef.current(currentProgressKey, Math.min(p, 100));
             // Also persist actual seconds so DownloadsPage can show resume position
             storage.set("dlTime_" + currentProgressKey, Math.floor(ct));
+            onPlaybackSession?.({
+              page: "tv",
+              id: item.id,
+              season: selectedSeason,
+              episode: selectedEp?.episode_number,
+              playing: !pipOpen,
+              time: ct,
+              duration: result.duration,
+              source: playerSource,
+            });
 
             // Auto-mark watched when remaining time ≤ threshold
             const remaining = result.duration - ct;
@@ -1524,17 +1495,37 @@ export default function TVPage({
     return () => {
       clearTimeout(timer);
       clearInterval(interval);
-      setSkipPrompt(null);
     };
   }, [
     playing,
-    skipTimings,
     playerSource,
-    introSkipMode,
     currentProgressKey,
     watchedThreshold,
     progressViaFrames,
+    item.id,
+    selectedSeason,
+    selectedEp?.episode_number,
+    pipOpen,
+    onPlaybackSession,
   ]);
+
+  const togglePlayerFullscreen = useCallback(() => {
+    setPlayerFullscreen((current) => {
+      const next = !current;
+      if (next) document.documentElement.setAttribute("data-player-fullscreen", "1");
+      else document.documentElement.removeAttribute("data-player-fullscreen");
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!playerFullscreen) return undefined;
+    const onKey = (event) => {
+      if (event.key === "Escape") togglePlayerFullscreen();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [playerFullscreen, togglePlayerFullscreen]);
 
   // Skip backward/forward by N seconds via webview JS injection
   const seekBy = useCallback(async (seconds) => {
@@ -1549,34 +1540,6 @@ export default function TVPage({
       `);
     } catch {}
   }, []);
-
-  useEffect(() => {
-    const wv = webviewRef.current;
-    if (!wv || !playing || !isAsync) return;
-
-    const inject = () => {
-      wv.executeJavaScript(INJECT_SKIP_CONTROLS).catch(() => {});
-    };
-
-    wv.addEventListener("dom-ready", inject);
-
-    try {
-      inject();
-    } catch {}
-
-    return () => {
-      wv.removeEventListener("dom-ready", inject);
-      try {
-        wv.executeJavaScript(`
-          (() => {
-            const el = document.getElementById('__skip-ui');
-            if (el) el.remove();
-            window.__skipControlsInjected = false;
-          })()
-        `);
-      } catch {}
-    };
-  }, [playing, playerSource]);
 
   // ── Controller support: play/pause, seek, volume, fullscreen ─────────────
   // Runs for any source (not just async ones) since it only needs a <video>
@@ -1646,6 +1609,21 @@ export default function TVPage({
       setResolveError(null);
       setSelectedEp(ep);
       setPlaying(true);
+      onPlaybackSession?.({
+        page: "tv",
+        id: item.id,
+        season: selectedSeason,
+        episode: ep.episode_number,
+        playing: true,
+        time:
+          Number(
+            storage.get(
+              `dlTime_tv_${item.id}_s${selectedSeason}e${ep.episode_number}`,
+            ),
+          ) || 0,
+        duration: 0,
+        source: playerSource,
+      });
       onHistory({
         ...d,
         media_type: "tv",
@@ -1655,8 +1633,114 @@ export default function TVPage({
       });
       // d and selectedSeason are stable within a season view; onHistory is useCallback in App
     },
-    [d, selectedSeason, onHistory],
+    [d, selectedSeason, onHistory, item.id, onPlaybackSession, playerSource],
   );
+
+  const handlePlayerExit = useCallback(() => {
+    setPlaying(false);
+    setPlayerFullscreen(false);
+    document.documentElement.removeAttribute("data-player-fullscreen");
+    onPlaybackSession?.({
+      page: "tv",
+      id: item.id,
+      season: selectedSeason,
+      episode: selectedEp?.episode_number,
+      playing: false,
+      time: 0,
+      duration: 0,
+      source: playerSource,
+    });
+  }, [
+    item.id,
+    onPlaybackSession,
+    playerSource,
+    selectedEp?.episode_number,
+    selectedSeason,
+  ]);
+
+  const handleDetailBack = useCallback(() => {
+    if (playing) {
+      handlePlayerExit();
+      return;
+    }
+    onBack();
+  }, [handlePlayerExit, onBack, playing]);
+
+  useEffect(() => {
+    if (!playing || !registerPlayerBack) return undefined;
+    return registerPlayerBack(handlePlayerExit);
+  }, [handlePlayerExit, playing, registerPlayerBack]);
+
+  // Returning from Settings: restore the exact episode, then seek once the
+  // provider's video exists. This is independent from normal episode clicks.
+  useEffect(() => {
+    if (episodeRestoredRef.current) return;
+    const session = initialResumeRef.current;
+    if (
+      !session?.playing ||
+      session.page !== "tv" ||
+      Number(session.id) !== Number(item.id)
+    ) {
+      return;
+    }
+    const epNum = Number(session.episode);
+    if (!epNum || !currentSeasonEpisodes?.length) return;
+    const ep = currentSeasonEpisodes.find(
+      (candidate) => Number(candidate.episode_number) === epNum,
+    );
+    if (!ep) return;
+    episodeRestoredRef.current = true;
+    playEpisode(ep);
+  }, [currentSeasonEpisodes, item.id, playEpisode]);
+
+  useEffect(() => {
+    if (!playing || resumeAppliedRef.current) return undefined;
+    const session = initialResumeRef.current;
+    if (
+      !session?.playing ||
+      session.page !== "tv" ||
+      Number(session.id) !== Number(item.id) ||
+      Number(session.episode) !== Number(selectedEp?.episode_number)
+    ) {
+      return undefined;
+    }
+    const target = Number(session.time) || 0;
+    const wv = webviewRef.current;
+    if (!wv) return undefined;
+    let cancelled = false;
+    let attempts = 0;
+
+    const apply = async () => {
+      if (cancelled || resumeAppliedRef.current) return;
+      let wcId = null;
+      try {
+        wcId = wv.getWebContentsId?.();
+      } catch {}
+      if (wcId && window.electron?.controlVideo) {
+        const state = await window.electron.controlVideo(wcId, "state");
+        if (state?.found && state.duration > 0) {
+          if (target > 1) {
+            await window.electron.controlVideo(wcId, "seek-to", target);
+          }
+          if (session.paused) {
+            await window.electron.controlVideo(wcId, "pause");
+          } else {
+            await window.electron.controlVideo(wcId, "play");
+          }
+          resumeAppliedRef.current = true;
+          return;
+        }
+      }
+      if (attempts++ < 20) setTimeout(apply, 800);
+    };
+
+    wv.addEventListener("dom-ready", apply);
+    apply();
+    return () => {
+      cancelled = true;
+      wv.removeEventListener("dom-ready", apply);
+    };
+  }, [playing, item.id, selectedEp?.episode_number]);
 
   const nextEp = useMemo(() => {
     if (!selectedEp || !currentSeasonEpisodes) return null;
@@ -1704,13 +1788,35 @@ export default function TVPage({
   // Videasy and HiAnime handle fullscreen internally via CSS, skip those.
   useEffect(() => {
     if (!playing) return;
-    if (!NEEDS_INTERCEPT.includes(playerSource)) return;
-    const enterH = window.electron?.onWebviewEnterFullscreen?.(() => {
-      // requestFullscreen() is rejected when Electron is already in fullscreen -> use css overlay
+    const enterH = window.electron?.onWebviewEnterFullscreen?.((payload) => {
+      let wcId = null;
+      try {
+        wcId = webviewRef.current?.getWebContentsId?.();
+      } catch {}
+      if (payload?.wcId && wcId && Number(payload.wcId) !== Number(wcId)) return;
+      // requestFullscreen() is rejected when Electron is already in fullscreen -> use css overlay.
+      // Exit the guest's native fullscreen right away so the host deck is not
+      // painted underneath the provider's fullscreen surface.
       setPlayerFullscreen(true);
       document.documentElement.setAttribute("data-player-fullscreen", "1");
+      fullscreenExitRef.current = true;
+      try {
+        const wv = webviewRef.current;
+        if (wcId && window.electron?.controlVideo) {
+          // Reach cross-origin provider frames, not just the top document.
+          window.electron.controlVideo(wcId, "exit-fullscreen").catch(() => {});
+        } else {
+          wv?.executeJavaScript(
+            "document.exitFullscreen && document.exitFullscreen().catch(function() {})",
+          ).catch(() => {});
+        }
+      } catch {}
     });
     const leaveH = window.electron?.onWebviewLeaveFullscreen?.(() => {
+      if (fullscreenExitRef.current) {
+        fullscreenExitRef.current = false;
+        return;
+      }
       setPlayerFullscreen(false);
       document.documentElement.removeAttribute("data-player-fullscreen");
       if (document.fullscreenElement) document.exitFullscreen?.();
@@ -1846,35 +1952,44 @@ export default function TVPage({
                       <button
                         className="btn btn-secondary btn-restricted"
                         disabled
-                        title="Inappropriate for your age rating setting"
+                        title={t("detail.ageHint")}
                       >
-                        🔒 Trailer
+                        🔒 {t("detail.trailer")}
                       </button>
                     ) : (
                       <button
                         className="btn btn-secondary"
                         onClick={() => setShowTrailer(true)}
                       >
-                        <TrailerIcon /> Trailer
+                        <TrailerIcon /> {t("detail.trailer")}
                       </button>
                     ))}
                   <button
                     className="btn btn-secondary"
                     onClick={() => setShowCast(true)}
                   >
-                    <CastIcon /> Cast
+                    <CastIcon /> {t("detail.cast")}
                   </button>
                   <button className="btn btn-secondary" onClick={onSave}>
                     {isSaved ? <BookmarkFillIcon /> : <BookmarkIcon />}
-                    {isSaved ? "Saved" : "Save"}
+                    {isSaved ? t("detail.saved") : t("detail.save")}
                   </button>
-                  <button className="btn btn-ghost" onClick={onBack}>
-                    <BackIcon /> Back
+                  <button className="btn btn-ghost" onClick={handleDetailBack}>
+                    <BackIcon /> {t("detail.back")}
                   </button>
                 </div>
               </div>
             </div>
           </div>
+
+          <CastPanel
+            cast={credits.cast}
+            crew={credits.crew}
+            creators={details?.created_by || []}
+            loading={credits.loading}
+            onOpenPerson={onOpenPerson}
+            onShowAll={() => setShowCast(true)}
+          />
 
           {playing && selectedEp && (
             <div className="section">
@@ -1887,7 +2002,7 @@ export default function TVPage({
                 }}
               >
                 <span className="tag tag-red">
-                  Season {selectedSeason} · E{selectedEp.episode_number}
+                  {t("detail.seasonShort", { n: selectedSeason })} · E{selectedEp.episode_number}
                 </span>
                 <span style={{ fontSize: 14, fontWeight: 500 }}>
                   {selectedEp.name}
@@ -1898,7 +2013,7 @@ export default function TVPage({
                     style={{ marginLeft: "auto" }}
                     onClick={() => onMarkUnwatched?.(currentProgressKey)}
                   >
-                    <WatchedIcon size={14} /> Watched
+                    <WatchedIcon size={14} /> {t("detail.watched")}
                   </button>
                 ) : (
                   <button
@@ -1906,7 +2021,7 @@ export default function TVPage({
                     style={{ marginLeft: "auto" }}
                     onClick={() => onMarkWatched?.(currentProgressKey)}
                   >
-                    ✓ Mark Watched
+                    ✓ {t("detail.markWatched")}
                   </button>
                 )}
               </div>
@@ -2430,147 +2545,57 @@ export default function TVPage({
                   )}
                 </button>
 
-                {/* Skip controls are injected directly into the webview DOM*/}
-
-                {/* AniSkip manual prompt, rendered in streambert UI, outside webview */}
-                {skipPrompt && (
-                  <button
-                    onClick={handleManualSkip}
-                    style={{
-                      position: "absolute",
-                      bottom: 24,
-                      right: 24,
-                      zIndex: 50,
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "center",
-                      gap: 1,
-                      background: "rgba(0,0,0,0.72)",
-                      border: "1px solid rgba(255,255,255,0.18)",
-                      borderRadius: 8,
-                      color: "white",
-                      cursor: "pointer",
-                      padding: "9px 18px",
-                      backdropFilter: "blur(6px)",
-                      WebkitBackdropFilter: "blur(6px)",
-                      transition: "background 0.15s, border-color 0.15s",
-                      fontFamily: "var(--font-body)",
-                      animation: "slideDown 0.2s ease",
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = "rgba(229,9,20,0.85)";
-                      e.currentTarget.style.borderColor = "rgba(229,9,20,0.5)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = "rgba(0,0,0,0.72)";
-                      e.currentTarget.style.borderColor =
-                        "rgba(255,255,255,0.18)";
-                    }}
-                  >
-                    <span
-                      style={{
-                        fontSize: 11,
-                        fontWeight: 700,
-                        letterSpacing: 1,
-                      }}
-                    >
-                      SKIP
-                    </span>
-                    <span
-                      style={{
-                        fontSize: 10,
-                        color: "rgba(255,255,255,0.7)",
-                        letterSpacing: 1,
-                      }}
-                    >
-                      {skipPrompt === "intro" ? "INTRO" : "OUTRO"}
-                    </span>
-                  </button>
-                )}
+                <PlayerDeck
+                  webviewRef={webviewRef}
+                  wrapRef={playerWrapRef}
+                  active={
+                    playing &&
+                    !pipOpen &&
+                    !webviewLoading &&
+                    !srcId.error &&
+                    !resolveError &&
+                    autoplayCountdown === null
+                  }
+                  pipOpen={pipOpen}
+                  onExit={handlePlayerExit}
+                  onSettings={onSettings}
+                  onSession={(state) =>
+                    onPlaybackSession?.({
+                      page: "tv",
+                      id: item.id,
+                      season: selectedSeason,
+                      episode: selectedEp?.episode_number,
+                      playing: true,
+                      paused: state.paused,
+                      time: state.time,
+                      duration: state.duration,
+                      source: playerSource,
+                    })
+                  }
+                  title={title}
+                  subtitle={
+                    selectedEp
+                      ? `T${selectedSeason} · E${selectedEp.episode_number}`
+                      : null
+                  }
+                  skipTimings={skipTimings}
+                  introKey={
+                    selectedEp
+                      ? `tv_${item.id}_s${selectedSeason}_e${selectedEp.episode_number}`
+                      : ""
+                  }
+                  seriesKey={`tv_${item.id}`}
+                  isSeries
+                  pageFullscreen={playerFullscreen}
+                  onToggleFullscreen={togglePlayerFullscreen}
+                />
               </div>
 
-              {currentProgressKey &&
-                (() => {
-                  const epPct = progress[currentProgressKey] || 0;
-                  const dur = durationRef.current;
-                  const hasMarkers =
-                    dur > 0 && (skipTimings?.intro || skipTimings?.outro);
-                  return epPct > 0 || hasMarkers ? (
-                    <div className="progress-bar-row">
-                      <div
-                        className="progress-bar-outer"
-                        style={{ position: "relative" }}
-                      >
-                        <div
-                          className="progress-bar-fill"
-                          style={{ width: `${Math.min(epPct, 100)}%` }}
-                        />
-                        {/* AniSkip intro/outro markers */}
-                        {dur > 0 && skipTimings?.intro && (
-                          <div
-                            title="Intro"
-                            style={{
-                              position: "absolute",
-                              top: 0,
-                              left: `${(skipTimings.intro.startTime / dur) * 100}%`,
-                              width: `${((skipTimings.intro.endTime - skipTimings.intro.startTime) / dur) * 100}%`,
-                              height: "100%",
-                              background: "rgba(251,191,36,0.75)",
-                              borderRadius: 2,
-                              pointerEvents: "none",
-                            }}
-                          />
-                        )}
-                        {dur > 0 && skipTimings?.outro && (
-                          <div
-                            title="Outro"
-                            style={{
-                              position: "absolute",
-                              top: 0,
-                              left: `${(skipTimings.outro.startTime / dur) * 100}%`,
-                              width: `${((skipTimings.outro.endTime - skipTimings.outro.startTime) / dur) * 100}%`,
-                              height: "100%",
-                              background: "rgba(251,191,36,0.75)",
-                              borderRadius: 2,
-                              pointerEvents: "none",
-                            }}
-                          />
-                        )}
-                      </div>
-                      <span style={{ fontSize: 12, color: "var(--text3)" }}>
-                        {epPct > 0 ? `${epPct.toFixed(0)}% watched` : ""}
-                      </span>
-                    </div>
-                  ) : null;
-                })()}
-              {currentProgressKey && (
-                <div className="progress-mark-row">
-                  <span
-                    style={{
-                      fontSize: 12,
-                      color: "var(--text3)",
-                      marginRight: 4,
-                    }}
-                  >
-                    Mark progress:
-                  </span>
-                  {[25, 50, 75, 100].map((p) => (
-                    <button
-                      key={p}
-                      className="btn btn-ghost"
-                      style={{ padding: "5px 14px", fontSize: 12 }}
-                      onClick={() => saveProgress(currentProgressKey, p)}
-                    >
-                      {p}%
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
           )}
 
           <div className="section">
-            <div className="section-title">Episodes</div>
+            <div className="section-title">{t("detail.episodes")}</div>
             {seasons.length > 0 && (
               <div className="season-selector">
                 {seasons.map((s) => {
