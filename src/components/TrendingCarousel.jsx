@@ -327,7 +327,8 @@ export default function TrendingCarousel({
       const dx = e.changedTouches[0].clientX - touchStartX.current;
       touchStartX.current = null;
       if (Math.abs(dx) < 40) return;
-      dx < 0 ? goNext() : goPrev();
+      if (dx < 0) goNext();
+      else goPrev();
       resetInterval();
     },
     [goNext, goPrev, resetInterval],

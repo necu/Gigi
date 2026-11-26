@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { CloseIcon, ShieldBlockIcon } from "./Icons";
+import { translate as tr } from "../utils/i18n";
 
 /**
  * Modal showing which ad/tracker domains were blocked during the current session
@@ -31,7 +32,7 @@ export default function BlockedStatsModal({
           <button
             className="blocked-modal-close"
             onClick={onClose}
-            title="Close"
+            title={tr("blocked.close")}
           >
             <CloseIcon />
           </button>
@@ -46,7 +47,7 @@ export default function BlockedStatsModal({
         <div className="blocked-modal-list">
           {sessionDomains.length === 0 ? (
             <div className="blocked-modal-empty">
-              No ads or trackers blocked yet, play something to start.
+              {tr("blocked.noAdsOrTrackersBlockedYetPlaySomethingToStart")}
             </div>
           ) : (
             sessionDomains.map(([domain, count]) => (

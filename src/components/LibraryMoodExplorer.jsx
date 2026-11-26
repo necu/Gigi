@@ -17,7 +17,7 @@ function activeChips(active, facets) {
 
 function toggleFilter(active, group, tag, count) {
   if (!count && active?.[group.id] !== tag) return active;
-  const next = { ...(active || {}) };
+  const next = { ...active };
   if (next[group.id] === tag) delete next[group.id];
   else next[group.id] = tag;
   return next;

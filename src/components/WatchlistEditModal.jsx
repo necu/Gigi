@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { translate as tr } from "../utils/i18n";
 import { WATCH_STATUSES } from "../utils/watchlist";
 import useFocusTrap from "../utils/useFocusTrap";
 import ChipInput from "./ChipInput";
@@ -43,8 +44,8 @@ export default function WatchlistEditModal({
         onClick={(event) => event.stopPropagation()}
       >
         <div className="download-modal-header">
-          <span>Edit watchlist entry</span>
-          <button className="icon-btn" onClick={onClose} aria-label="Close">
+          <span>{tr("watchEdit.editWatchlistEntry")}</span>
+          <button className="icon-btn" onClick={onClose} aria-label={tr("watchEdit.close")}>
             <CloseIcon />
           </button>
         </div>
@@ -56,7 +57,7 @@ export default function WatchlistEditModal({
           </div>
 
           <div className="watchlist-field">
-            <label className="watchlist-label">Status</label>
+            <label className="watchlist-label">{tr("watchEdit.status")}</label>
             <div className="status-picker">
               {WATCH_STATUSES.map((option) => (
                 <button
@@ -95,35 +96,35 @@ export default function WatchlistEditModal({
                   className="btn btn-ghost"
                   onClick={() => setRating(0)}
                 >
-                  Clear
+                  {tr("watchEdit.clear")}
                 </button>
               )}
             </div>
           </div>
 
           <ChipInput
-            label="Tags"
-            placeholder="anime, cozy, rewatch…"
+            label={tr("watchEdit.tags")}
+            placeholder={tr("watchEdit.animeCozyRewatch")}
             values={tags}
             onChange={setTags}
             suggestions={allTags}
           />
 
           <ChipInput
-            label="Collections"
-            placeholder="Weekend, Nolan, Pending…"
+            label={tr("watchEdit.collections")}
+            placeholder={tr("watchEdit.weekendNolanPending")}
             values={collections}
             onChange={setCollections}
             suggestions={allCollections}
           />
 
           <div className="watchlist-field">
-            <label className="watchlist-label">Notes</label>
+            <label className="watchlist-label">{tr("watchEdit.notes")}</label>
             <textarea
               className="watchlist-notes"
               value={notes}
               onChange={(event) => setNotes(event.target.value)}
-              placeholder="Why did you save this? What should you remember?"
+              placeholder={tr("watchEdit.whyDidYouSaveThisWhatShouldYouRemember")}
               rows={4}
             />
           </div>
@@ -131,10 +132,10 @@ export default function WatchlistEditModal({
 
         <div className="watchlist-edit-footer">
           <button className="btn btn-ghost" onClick={onClose}>
-            Cancel
+            {tr("watchEdit.cancel")}
           </button>
           <button className="btn btn-primary" onClick={handleSave}>
-            Save changes
+            {tr("watchEdit.saveChanges")}
           </button>
         </div>
       </div>

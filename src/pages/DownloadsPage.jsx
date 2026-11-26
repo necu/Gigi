@@ -8,6 +8,7 @@ import {
   WatchedIcon,
   SubtitlesIcon,
 } from "../components/Icons";
+import { translate as tr } from "../utils/i18n";
 import { storage, isElectron, STORAGE_KEYS } from "../utils/storage";
 import SubtitleDownloaderModal from "../components/SubtitleDownloaderModal";
 import { imgUrl } from "../utils/api";
@@ -83,8 +84,6 @@ export default function DownloadsPage({
   downloads,
   onDeleteDownload,
   onHistory,
-  onSaveProgress,
-  progress,
   watched,
   onMarkWatched,
   onMarkUnwatched,
@@ -373,10 +372,12 @@ export default function DownloadsPage({
           }}
         />
       )}
-      <div className="dl-page__title">DOWNLOADS</div>
+      <div className="dl-page__title">{tr("downloads.downloads")}</div>
       <div className="dl-page__subtitle">
-        {active.length > 0 ? `${active.length} active` : "No active downloads"}{" "}
-        · {allLocalItemsRaw.length} completed
+        {active.length > 0
+          ? tr("downloads.activeCount", { n: active.length })
+          : tr("downloads.noActive")}{" "}
+        · {tr("downloads.completedCount", { n: allLocalItemsRaw.length })}
       </div>
 
       {/* ── Ctrl+K Search bar ─────────────────────────────────────────────── */}
@@ -401,7 +402,7 @@ export default function DownloadsPage({
             className="dl-search-bar__input"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Filter downloads…"
+            placeholder={tr("downloads.filterDownloads")}
           />
           {q && (
             <span className="dl-search-bar__count">
@@ -416,7 +417,7 @@ export default function DownloadsPage({
               setSearchOpen(false);
               setSearchQuery("");
             }}
-            title="Close (Esc)"
+            title={tr("downloads.closeEsc")}
           >
             ✕
           </button>
@@ -427,7 +428,7 @@ export default function DownloadsPage({
       <div className="dl-toolbar">
         {/* Left: sort controls */}
         <div className="dl-toolbar__group">
-          <span className="dl-toolbar__label">Sort by</span>
+          <span className="dl-toolbar__label">{tr("downloads.sortBy")}</span>
           <div className="dl-toolbar__sort-btns">
             {SORT_OPTIONS.map(({ value, label }) => (
               <button
@@ -435,14 +436,14 @@ export default function DownloadsPage({
                 className={`dl-toolbar__sort-btn${sortBy === value ? " dl-toolbar__sort-btn--active" : ""}`}
                 onClick={() => setSortBy(value)}
               >
-                {label}
+                {tr(`downloads.sort.${value}`) || label}
               </button>
             ))}
           </div>
           <button
             className="dl-toolbar__dir-btn"
             onClick={() => setSortDir((d) => (d === "desc" ? "asc" : "desc"))}
-            title={sortDir === "desc" ? "Descending" : "Ascending"}
+            title={sortDir === "desc" ? tr("downloads.descending") : tr("downloads.ascending")}
           >
             {sortDir === "desc" ? "↓" : "↑"}
           </button>
@@ -454,17 +455,19 @@ export default function DownloadsPage({
             className={`dl-toolbar__toggle${showUntracked ? " dl-toolbar__toggle--on" : ""}`}
             onClick={() => setShowUntracked((v) => !v)}
             title={
-              showUntracked ? "Hide untracked files" : "Show untracked files"
+              showUntracked
+                ? tr("downloads.hideUntracked")
+                : tr("downloads.showUntracked")
             }
           >
-            {showUntracked ? "⊙" : "⊘"} Untracked
+            {showUntracked ? "⊙" : "⊘"} {tr("downloads.untracked")}
             {untrackedCount > 0 ? ` (${untrackedCount})` : ""}
           </button>
           {!searchOpen && (
             <button
               className="dl-toolbar__search-hint"
               onClick={() => setSearchOpen(true)}
-              title="Search (Ctrl+K)"
+              title={tr("downloads.searchCtrlK")}
             >
               <svg
                 width="13"
@@ -487,7 +490,7 @@ export default function DownloadsPage({
 
       {active.length > 0 && (
         <div className="dl-page__section">
-          <div className="settings-section-title dl-section-title">Active</div>
+          <div className="settings-section-title dl-section-title">{tr("downloads.active")}</div>
           <div className="dl-page__list">
             {active.map((dl) => (
               <ActiveCard
@@ -519,14 +522,14 @@ export default function DownloadsPage({
       <div>
         <div className="dl-page__local-header">
           <div className="settings-section-title dl-section-title--inline">
-            Local Files
+            {tr("downloads.localFiles")}
           </div>
           <div className="dl-page__scan-controls">
             {isElectron && (
               <>
                 <input
                   className="dl-page__scan-input"
-                  placeholder="Folder to scan…"
+                  placeholder={tr("downloads.folderToScan")}
                   value={scanFolder}
                   onChange={(e) => setScanFolder(e.target.value)}
                 />
@@ -540,7 +543,7 @@ export default function DownloadsPage({
                     }
                   }}
                 >
-                  Browse
+                  {tr("downloads.browse")}
                 </button>
                 <button
                   className="btn btn-ghost btn--sm"
@@ -628,10 +631,10 @@ export default function DownloadsPage({
         ) : (
           <div className="dl-page__empty-text">
             {q
-              ? `No downloads match "${searchQuery}".`
+              ? tr("downloads.noMatch", { query: searchQuery })
               : downloads.length === 0 && localFiles.length === 0
-                ? "No local files yet. Scan a folder or start a download."
-                : "No completed downloads or local files found."}
+                ? tr("downloads.noLocalYet")
+                : tr("downloads.noCompletedFound")}
           </div>
         )}
       </div>
@@ -641,10 +644,9 @@ export default function DownloadsPage({
         active.length === 0 && (
           <div className="empty-state">
             <DownloadIcon />
-            <h3>No downloads yet</h3>
+            <h3>{tr("downloads.noDownloadsYet")}</h3>
             <p>
-              Start a download from any movie or series page, or scan a folder
-              to find local video files.
+              {tr("downloads.emptyDesc")}
             </p>
           </div>
         )}
@@ -709,7 +711,7 @@ const ActiveCard = memo(function ActiveCard({ dl, onDelete, onSelect }) {
         </div>
         <div className="dl-card__right">
           <div className="dl-card__pct">{pct.toFixed(1)}%</div>
-          <button className="icon-btn" onClick={onDelete} title="Remove">
+          <button className="icon-btn" onClick={onDelete} title={tr("downloads.remove")}>
             <TrashIcon />
           </button>
         </div>
@@ -966,7 +968,7 @@ const LocalFileCard = memo(function LocalFileCard({
               {dl.name}
             </div>
             {isWatched && (
-              <span className="dl-card__watched-icon" title="Watched">
+              <span className="dl-card__watched-icon" title={tr("downloads.watched")}>
                 <WatchedIcon size={14} />
               </span>
             )}
@@ -979,7 +981,7 @@ const LocalFileCard = memo(function LocalFileCard({
               </span>
             )}
             {!isDownload && (
-              <span className="dl-status dl-status--local">Local</span>
+              <span className="dl-status dl-status--local">{tr("downloads.local")}</span>
             )}
             {dl.completedAt && <span>{timeAgo(dl.completedAt)}</span>}
             {dl.size && <span>{dl.size}</span>}
@@ -1039,7 +1041,7 @@ const LocalFileCard = memo(function LocalFileCard({
               );
             })()}
             {fileExists === false && (
-              <span className="dl-status--missing">File missing</span>
+              <span className="dl-status--missing">{tr("downloads.fileMissing")}</span>
             )}
 
             {progressLabel !== null && storageKey && (
@@ -1047,7 +1049,7 @@ const LocalFileCard = memo(function LocalFileCard({
                 <span
                   className={`dl-progress-pill${savedSecs ? " dl-progress-pill--active" : " dl-progress-pill--empty"}`}
                   onClick={openPopover}
-                  title="Set watch progress"
+                  title={tr("downloads.setWatchProgress")}
                   style={{ cursor: "pointer", userSelect: "none" }}
                 >
                   <span className="dl-progress-pill__label">
@@ -1263,7 +1265,7 @@ const LocalFileCard = memo(function LocalFileCard({
                         className="btn btn-ghost btn--sm"
                         onClick={resetProgress}
                         style={{ fontSize: 11, padding: "4px 7px" }}
-                        title="Reset"
+                        title={tr("downloads.reset")}
                       >
                         ↺
                       </button>
@@ -1272,7 +1274,7 @@ const LocalFileCard = memo(function LocalFileCard({
                         onClick={commitPopover}
                         style={{ fontSize: 11, padding: "4px 9px" }}
                       >
-                        Save
+                        {tr("downloads.save")}
                       </button>
                     </div>
                   </div>
@@ -1288,15 +1290,15 @@ const LocalFileCard = memo(function LocalFileCard({
               <button
                 className="btn btn-ghost watched-btn dl-btn--sm"
                 onClick={onMarkUnwatched}
-                title="Mark as Unwatched"
+                title={tr("downloads.markAsUnwatched")}
               >
-                <WatchedIcon size={13} /> Watched
+                <WatchedIcon size={13} /> {tr("downloads.watched")}
               </button>
             ) : (
               <button
                 className="btn btn-ghost dl-btn--sm"
                 onClick={onMarkWatched}
-                title="Mark as Watched"
+                title={tr("downloads.markAsWatched")}
               >
                 ✓ Mark Watched
               </button>
@@ -1316,13 +1318,13 @@ const LocalFileCard = memo(function LocalFileCard({
             <button
               className="btn btn-ghost dl-btn--sm-icon"
               onClick={onShowFolder}
-              title="Show in folder"
+              title={tr("downloads.showInFolder")}
             >
               <FolderIcon />
             </button>
           )}
           {onDelete && (
-            <button className="icon-btn" onClick={onDelete} title="Delete">
+            <button className="icon-btn" onClick={onDelete} title={tr("downloads.delete")}>
               <TrashIcon />
             </button>
           )}
@@ -1330,10 +1332,10 @@ const LocalFileCard = memo(function LocalFileCard({
             <button
               className="btn btn-ghost dl-btn--sm"
               onClick={onOpenLog}
-              title="Open error log"
+              title={tr("downloads.openErrorLog")}
               style={{ color: "var(--red)", fontSize: 11 }}
             >
-              View Log
+              {tr("downloads.viewLog")}
             </button>
           )}
         </div>

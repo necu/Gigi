@@ -1,4 +1,5 @@
 import { Component } from "react";
+import { translate as tr } from "../utils/i18n";
 
 export default class ErrorBoundary extends Component {
   constructor(props) {
@@ -60,7 +61,7 @@ export default class ErrorBoundary extends Component {
             color: "#fff",
           }}
         >
-          SOMETHING WENT WRONG
+          {tr("errorBoundary.somethingWentWrong")}
         </div>
 
         <div
@@ -108,7 +109,7 @@ export default class ErrorBoundary extends Component {
               padding: "10px 22px",
             }}
           >
-            Try Again
+            {tr("errorBoundary.tryAgain")}
           </button>
           <button
             onClick={() => window.location.reload()}
@@ -123,7 +124,7 @@ export default class ErrorBoundary extends Component {
               padding: "10px 22px",
             }}
           >
-            Reload App
+            {tr("errorBoundary.reloadApp")}
           </button>
         </div>
       </div>

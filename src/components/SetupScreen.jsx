@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { GigiLogo, PlayIcon } from "./Icons";
+import { translate as tr } from "../utils/i18n";
 
 const TMDB_BASE = "https://api.themoviedb.org/3";
 
@@ -123,29 +124,29 @@ export default function SetupScreen({ onSave, onSkip }) {
         </div>
         <div className="apikey-title">GIGI</div>
         <p className="apikey-sub">
-          Enter your <strong>free</strong> TMDB{" "}
-          <strong>Read Access Token</strong> to get started.
+          {tr("setup.enterYour")} <strong>free</strong> TMDB{" "}
+          <strong>{tr("setup.readAccessToken")}</strong> {tr("setup.toGetStarted")}
           <br />
-          Go to{" "}
+          {tr("setup.goTo")}{" "}
           <ExternalLink
             className="apikey-link"
             href="https://www.themoviedb.org/settings/api"
           >
             themoviedb.org → Settings → API
           </ExternalLink>{" "}
-          and copy the <em>API Read Access Token</em> (the long JWT, not the
-          shorter API Key below).
+          {tr("setup.andCopyThe")} <em>{tr("setup.apiReadAccessToken")}</em>{" "}
+          {tr("setup.theLongJwt")}
           <br />
           <ExternalLink
             className="apikey-link"
             href="https://github.com/necu/Gigi/blob/main/tmdb-tutorial.md"
           >
-            Step-by-step guide on how to get that Token
+            {tr("setup.stepByStepGuideOnHowToGetThatToken")}
           </ExternalLink>
         </p>
         <input
           className={`apikey-input${error ? " apikey-input-error" : ""}`}
-          placeholder="Paste your TMDB Read Access Token (eyJ...)..."
+          placeholder={tr("setup.pasteYourTmdbReadAccessTokenEyj")}
           value={key}
           onChange={(e) => {
             setKey(e.target.value);
@@ -181,11 +182,11 @@ export default function SetupScreen({ onSave, onSkip }) {
         >
           {checking ? (
             <>
-              <span className="apikey-spinner" /> Checking…
+              <span className="apikey-spinner" /> {tr("setup.checking")}
             </>
           ) : (
             <>
-              <PlayIcon /> Let's go
+              <PlayIcon /> {tr("setup.letSGo")}
             </>
           )}
         </button>
@@ -208,7 +209,7 @@ export default function SetupScreen({ onSave, onSkip }) {
             onMouseEnter={(e) => (e.currentTarget.style.color = "var(--text2)")}
             onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text3)")}
           >
-            Skip for now
+            {tr("setup.skipForNow")}
           </button>
         )}
       </div>

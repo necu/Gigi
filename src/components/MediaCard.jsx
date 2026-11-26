@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback, memo } from "react";
 import { imgUrl, isAnimeContent } from "../utils/api";
+import { useT } from "../utils/i18n";
 import {
   PlayIcon,
   FilmIcon,
@@ -9,6 +10,8 @@ import {
   RatingLockIcon,
   BookmarkIcon,
   BookmarkFillIcon,
+  HeartIcon,
+  HeartFillIcon,
 } from "./Icons";
 
 const MediaCard = memo(function MediaCard({
@@ -22,11 +25,14 @@ const MediaCard = memo(function MediaCard({
   restricted,
   isSaved = false,
   onToggleSave,
+  isFavorite = false,
+  onToggleFavorite,
   onEdit,
   selectable = false,
   selected = false,
   onToggleSelect,
 }) {
+  const t = useT();
   const title = item.title || item.name;
   const year = (item.release_date || item.first_air_date || "").slice(0, 4);
   const isTV = item.media_type === "tv";
@@ -53,7 +59,8 @@ const MediaCard = memo(function MediaCard({
 
   // For TV series cards without a specific episode, watched marking is disabled
   const canMarkWatched = !isTV || (item.season != null && item.episode != null);
-  const hasMenu = canMarkWatched || !!onToggleSave || !!onEdit;
+  const hasMenu =
+    canMarkWatched || !!onToggleSave || !!onToggleFavorite || !!onEdit;
 
   const openMenu = useCallback(
     (e) => {
@@ -91,6 +98,11 @@ const MediaCard = memo(function MediaCard({
     onToggleSave?.(item);
     setMenu(null);
   };
+  const handleToggleFavorite = (e) => {
+    e.stopPropagation();
+    onToggleFavorite?.(item);
+    setMenu(null);
+  };
   const handleEdit = (e) => {
     e.stopPropagation();
     onEdit?.(item);
@@ -122,7 +134,7 @@ const MediaCard = memo(function MediaCard({
             <div className="no-poster">
               {isTV ? <TVIcon /> : <FilmIcon />}
               <span style={{ fontSize: 10, color: "var(--text3)" }}>
-                No Image
+                {t("mediaCard.noImage")}
               </span>
             </div>
           )}
@@ -143,8 +155,12 @@ const MediaCard = memo(function MediaCard({
             <button
               className={`card-select${selected ? " selected" : ""}`}
               onClick={handleSelect}
-              aria-label={selected ? "Deselect title" : "Select title"}
-              title={selected ? "Deselect" : "Select"}
+              aria-label={
+                selected ? t("mediaCard.deselect") : t("mediaCard.select")
+              }
+              title={
+                selected ? t("mediaCard.deselect") : t("mediaCard.select")
+              }
             >
               {selected ? "✓" : ""}
             </button>
@@ -155,18 +171,45 @@ const MediaCard = memo(function MediaCard({
               className={`card-save${isSaved ? " is-saved" : ""}`}
               onClick={handleToggleSave}
               aria-label={
-                isSaved ? "Remove from watchlist" : "Add to watchlist"
+                isSaved
+                  ? t("mediaCard.removeWatchlist")
+                  : t("mediaCard.addWatchlist")
               }
-              title={isSaved ? "Remove from watchlist" : "Add to watchlist"}
+              title={
+                isSaved
+                  ? t("mediaCard.removeWatchlist")
+                  : t("mediaCard.addWatchlist")
+              }
             >
               {isSaved ? <BookmarkFillIcon /> : <BookmarkIcon />}
+            </button>
+          )}
+
+          {onToggleFavorite && isSaved && (
+            <button
+              className={`card-favorite${isFavorite ? " is-favorite" : ""}`}
+              onClick={handleToggleFavorite}
+              aria-label={
+                isFavorite
+                  ? t("mediaCard.removeFavorite")
+                  : t("mediaCard.addFavorite")
+              }
+              title={
+                isFavorite
+                  ? t("mediaCard.removeFavorite")
+                  : t("mediaCard.addFavorite")
+              }
+            >
+              {isFavorite ? <HeartFillIcon /> : <HeartIcon />}
             </button>
           )}
 
           <div className="card-overlay">
             {isUnreleased ? (
               <div className="card-unreleased-overlay">
-                <span className="card-unreleased-label">🔒 Unreleased</span>
+                <span className="card-unreleased-label">
+                  🔒 {t("mediaCard.unreleased")}
+                </span>
               </div>
             ) : (
               <div className="card-play">
@@ -195,7 +238,7 @@ const MediaCard = memo(function MediaCard({
           <div className="card-year">
             {isTV && item.season != null && item.episode != null
               ? `S${item.season}E${item.episode}${item.episodeName ? ` · ${item.episodeName}` : ""}`
-              : `${year} · ${isTV ? "Series" : "Movie"}`}
+              : `${year} · ${isTV ? t("mediaCard.series") : t("mediaCard.movie")}`}
           </div>
         </div>
         <span
@@ -218,21 +261,30 @@ const MediaCard = memo(function MediaCard({
                 className="context-menu-item"
                 onClick={handleMarkUnwatched}
               >
-                ↩ Mark as Unwatched
+                ↩ {t("mediaCard.markUnwatched")}
               </button>
             ) : (
               <button className="context-menu-item" onClick={handleMarkWatched}>
-                ✓ Mark as Watched
+                ✓ {t("mediaCard.markWatched")}
               </button>
             ))}
           {onToggleSave && (
             <button className="context-menu-item" onClick={handleToggleSave}>
-              {isSaved ? "✕ Remove from watchlist" : "+ Add to watchlist"}
+              {isSaved
+                ? `✕ ${t("mediaCard.removeWatchlist")}`
+                : `+ ${t("mediaCard.addWatchlist")}`}
+            </button>
+          )}
+          {onToggleFavorite && isSaved && (
+            <button className="context-menu-item" onClick={handleToggleFavorite}>
+              {isFavorite
+                ? `♥ ${t("mediaCard.removeFavorite")}`
+                : `♡ ${t("mediaCard.addFavorite")}`}
             </button>
           )}
           {onEdit && (
             <button className="context-menu-item" onClick={handleEdit}>
-              ✎ Edit watchlist entry
+              ✎ {t("mediaCard.edit")}
             </button>
           )}
         </div>

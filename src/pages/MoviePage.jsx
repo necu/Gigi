@@ -24,7 +24,6 @@ import {
   isAnimeContent,
   ANIME_DEFAULT_SOURCE,
   NON_ANIME_DEFAULT_SOURCE,
-  NEEDS_INTERCEPT,
   CLEAN_USER_AGENT,
   sourceUsesCleanUa,
   getNextNonAsyncSource,
@@ -107,6 +106,7 @@ export default function MoviePage({
   onAddSaga,
   onOpenPlaylist,
   onOpenPerson,
+  onPlayNext,
 }) {
   const t = useT();
   const [details, setDetails] = useState(null);
@@ -147,6 +147,7 @@ export default function MoviePage({
   const [menuPos, setMenuPos] = useState(null);
   const sourceRef = useRef(null);
   const playerWrapRef = useRef(null);
+  const queueNextRef = useRef(false);
   const webviewRef = useRef(null);
   const resumeAppliedRef = useRef(false);
   // A live player reports its position to App, which can re-render this page.
@@ -250,7 +251,7 @@ export default function MoviePage({
   const year = (d.release_date || "").slice(0, 4);
   const mediaName = `${title}${year ? " (" + year + ")" : ""}`;
 
-  const { watchedSecs, totalSecs, displayPct, progressLabel } = useMemo(() => {
+  const { displayPct, progressLabel } = useMemo(() => {
     const watchedSecs = storage.get("dlTime_" + progressKey) || 0;
     const totalSecs = d?.runtime ? d.runtime * 60 : 0;
     const derivedPct =
@@ -274,7 +275,7 @@ export default function MoviePage({
           : displayPct > 0
             ? `${displayPct}%`
             : null;
-    return { watchedSecs, totalSecs, displayPct, progressLabel };
+    return { displayPct, progressLabel };
   }, [progressKey, pct, d?.runtime]);
 
   // Read threshold from settings (default 20s), stable across renders
@@ -1006,7 +1007,7 @@ export default function MoviePage({
             )}
           </div>
           <div className="detail-info">
-            <div className="detail-type">Movie</div>
+            <div className="detail-type">{tr("movie.movie")}</div>
             <div className="detail-title">{title}</div>
             <div className="genres">
               {displayGenres.map((g) => (
@@ -1039,7 +1040,7 @@ export default function MoviePage({
                 <span className="age-rating-pill-cert">{rating.cert}</span>
                 {restricted && (
                   <span className="age-rating-pill-label">
-                    Inappropriate for your age setting
+                    {tr("movie.inappropriateForYourAgeSetting")}
                   </span>
                 )}
               </div>
@@ -1110,7 +1111,7 @@ export default function MoviePage({
               <button
                 className="btn btn-secondary btn-saga"
                 onClick={() => setShowSaga(true)}
-                title="Add a whole saga to your library as a playlist"
+                title={tr("movie.addAWholeSagaToYourLibraryAsAPlaylist")}
               >
                 ⧉ Saga
               </button>
@@ -1215,13 +1216,13 @@ export default function MoviePage({
               >
                 <span style={{ fontSize: 28 }}>⚠️</span>
                 <span style={{ fontSize: 14, color: "var(--text2)" }}>
-                  Movie not found on HiAnime
+                  {tr("movie.movieNotFoundOnHianime")}
                 </span>
                 <span style={{ fontSize: 12, color: "var(--text3)" }}>
                   {resolveError}
                 </span>
                 <span style={{ fontSize: 12, color: "var(--text3)" }}>
-                  Try a different source, or switch sub/dub.
+                  {tr("movie.tryADifferentSourceOrSwitchSubDub")}
                 </span>
               </div>
             )}
@@ -1274,7 +1275,7 @@ export default function MoviePage({
                     fontWeight: 600,
                   }}
                 >
-                  Playing in pop-out window
+                  {tr("movie.playingInPopOutWindow")}
                 </span>
                 <span
                   style={{
@@ -1284,7 +1285,7 @@ export default function MoviePage({
                     maxWidth: 260,
                   }}
                 >
-                  Closing the pop-out will reload the player here.
+                  {tr("movie.closingThePopOutWillReloadThePlayerHere")}
                 </span>
                 <button
                   className="player-overlay-btn"
@@ -1337,7 +1338,7 @@ export default function MoviePage({
                     setMenuPos({ top: rect.bottom + 6, left: rect.left });
                   setShowSourceMenu((v) => !v);
                 }}
-                title="Change source"
+                title={tr("movie.changeSource")}
               >
                 <SourceIcon />
                 {PLAYER_SOURCES.find((s) => s.id === playerSource)?.label ??
@@ -1360,7 +1361,7 @@ export default function MoviePage({
                     setResolvingUrl(false);
                     setResolveError(null);
                   }}
-                  title="Toggle Sub/Dub"
+                  title={tr("movie.toggleSubDub")}
                 >
                   {dubMode === "sub" ? "SUB" : "DUB"}
                 </button>
@@ -1372,7 +1373,7 @@ export default function MoviePage({
                   setShowSourceMenu(false);
                   setShowBlockedModal(true);
                 }}
-                title="Blocked ads & trackers"
+                title={tr("movie.blockedAdsAndTrackers")}
               >
                 <ShieldBlockIcon />
                 {blockedSession > 0 && (
@@ -1422,7 +1423,27 @@ export default function MoviePage({
               pipOpen={pipOpen}
               onExit={handlePlayerExit}
               onSettings={onSettings}
-              onSession={(state) =>
+              onNext={onPlayNext}
+              nextLabel={onPlayNext ? t("player.nextInQueue") : ""}
+              nextTitle={onPlayNext ? t("player.nextInQueue") : ""}
+              onPip={() => setPipOpen(true)}
+              onRetry={() => {
+                try {
+                  webviewRef.current?.reload();
+                } catch {}
+              }}
+              onSession={(state) => {
+                if (onPlayNext && state.duration > 0) {
+                  if (state.time < state.duration - 3) {
+                    queueNextRef.current = false;
+                  } else if (
+                    state.time >= state.duration - 0.8 &&
+                    !queueNextRef.current
+                  ) {
+                    queueNextRef.current = true;
+                    onPlayNext();
+                  }
+                }
                 onPlaybackSession?.({
                   page: "movie",
                   id: item.id,
@@ -1431,8 +1452,8 @@ export default function MoviePage({
                   time: state.time,
                   duration: state.duration,
                   source: playerSource,
-                })
-              }
+                });
+              }}
               title={title}
               subtitle={year ? String(year) : null}
               pageFullscreen={playerFullscreen}
@@ -1516,7 +1537,7 @@ export default function MoviePage({
               {!sourceSupportsProgress(playerSource) && (
                 <span
                   className="player-no-progress-hint"
-                  title="No automatic progress tracking for this source"
+                  title={tr("movie.noAutomaticProgressTrackingForThisSource")}
                 >
                   ⚠ no tracking
                 </span>

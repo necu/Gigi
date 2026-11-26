@@ -3,6 +3,7 @@
 // looking at and forwards it to the main process (src/ipc/discordRpc.js).
 
 import { storage, STORAGE_KEYS, isElectron } from "./storage";
+import { translate } from "./i18n";
 
 // Small badge shown as the "small_image" next to the cover.
 const APP_ICON_URL =
@@ -39,7 +40,7 @@ function baseAssets(posterUrl, settings) {
 
 function buttons(settings) {
   return settings.showButton
-    ? [{ label: "Watch media for free", url: GITHUB_URL }]
+    ? [{ label: translate("discord.githubButton"), url: GITHUB_URL }]
     : undefined;
 }
 
@@ -78,7 +79,7 @@ export function sendIdleActivity(settings) {
 
   const activity = {
     type: 3,
-    details: "Idling",
+    details: translate("discord.idling"),
     assets: { large_image: APP_ICON_URL, large_text: "Gigi" },
   };
   const btns = buttons(settings);

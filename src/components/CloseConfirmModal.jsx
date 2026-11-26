@@ -1,4 +1,5 @@
 import { DownloadIcon } from "./Icons";
+import { translate as tr } from "../utils/i18n";
 
 export default function CloseConfirmModal({ count, onConfirm, onCancel }) {
   return (
@@ -23,10 +24,10 @@ export default function CloseConfirmModal({ count, onConfirm, onCancel }) {
 
         <div className="close-confirm-actions">
           <button className="btn close-confirm-btn-cancel" onClick={onCancel}>
-            Keep Downloading
+            {tr("closeConfirm.keepDownloading")}
           </button>
           <button className="btn close-confirm-btn-confirm" onClick={onConfirm}>
-            Cancel & Close App
+            {tr("closeConfirm.cancelAndCloseApp")}
           </button>
         </div>
       </div>

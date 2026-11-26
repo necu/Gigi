@@ -92,7 +92,7 @@ export function genreIdByName(name) {
 }
 
 function isReleased(item) {
-  const date = item?.release_date;
+  const date = item?.release_date || item?.first_air_date;
   if (!date) return true;
   return date <= new Date().toISOString().slice(0, 10);
 }
@@ -101,16 +101,17 @@ function yearOf(item) {
   return (item?.release_date || item?.first_air_date || "").slice(0, 4);
 }
 
-function cardOf(item) {
+function cardOf(item, mediaType = "movie") {
+  const type = mediaType === "movie" ? "movie" : "tv";
   return {
     id: item.id,
-    media_type: "movie",
+    media_type: type,
     title: item.title || item.name || "",
     name: item.title || item.name || "",
     poster_path: item.poster_path || null,
     backdrop_path: item.backdrop_path || null,
     release_date: item.release_date || "",
-    first_air_date: "",
+    first_air_date: item.first_air_date || "",
     vote_average: item.vote_average ?? 0,
     vote_count: item.vote_count ?? 0,
     popularity: item.popularity ?? 0,
@@ -133,10 +134,16 @@ export async function buildPlaylist({
   genre = "",
   subgenre = "",
   terms = [],
+  mediaType = "movie",
   limit = 30,
 }) {
   if (!apiKey) return { items: [], moment: momentById(moment), query: "" };
 
+  const type = ["movie", "tv", "anime"].includes(mediaType)
+    ? mediaType
+    : "movie";
+  const isTV = type !== "movie";
+  const endpointType = isTV ? "tv" : "movie";
   const momentDef = momentById(moment);
   const genreId = genreIdByName(genre);
   const cleanTerms = uniq(
@@ -152,27 +159,31 @@ export async function buildPlaylist({
     include_adult: "false",
     sort_by: "popularity.desc",
     "vote_count.gte": "60",
-    "primary_release_date.lte": today,
+    ...(isTV ? {} : { "primary_release_date.lte": today }),
+    ...(isTV ? { "first_air_date.lte": today } : {}),
     page: "1",
   });
 
-  if (genreId) {
+  if (type === "anime") {
+    params.set("with_genres", "16");
+    params.set("with_original_language", "ja");
+  } else if (genreId) {
     params.set("with_genres", String(genreId));
   } else if (momentDef.genres.length > 0) {
     params.set("with_genres", momentDef.genres.join("|"));
   }
-  if (momentDef.maxRuntime) {
+  if (momentDef.maxRuntime && !isTV) {
     params.set("with_runtime.lte", String(momentDef.maxRuntime));
   }
 
   requests.push({
-    path: `/discover/movie?${params.toString()}`,
+    path: `/discover/${endpointType}?${params.toString()}`,
     source: "discover",
   });
 
   if (queryText) {
     requests.push({
-      path: `/search/movie?query=${encodeURIComponent(
+      path: `/search/${endpointType}?query=${encodeURIComponent(
         queryText,
       )}&include_adult=false&page=1`,
       source: "search",
@@ -183,7 +194,7 @@ export async function buildPlaylist({
   for (const term of cleanTerms.slice(0, 3)) {
     if (normalizeText(term) === normalizeText(subgenre)) continue;
     requests.push({
-      path: `/search/movie?query=${encodeURIComponent(
+      path: `/search/${endpointType}?query=${encodeURIComponent(
         term,
       )}&include_adult=false&page=1`,
       source: "term",
@@ -200,11 +211,17 @@ export async function buildPlaylist({
   const addCandidate = (item, request) => {
     if (!item?.id || item.adult || !isReleased(item)) return;
     if ((item.vote_count || 0) < 8) return;
-    const key = `movie_${item.id}`;
+    if (
+      type === "anime" &&
+      (!(item.genre_ids || []).includes(16) || item.original_language !== "ja")
+    ) {
+      return;
+    }
+    const key = `${endpointType}_${item.id}`;
     let candidate = pool.get(key);
     if (!candidate) {
       candidate = {
-        item: cardOf(item),
+        item: cardOf(item, type),
         sources: new Set(),
         terms: new Set(),
       };
@@ -231,7 +248,7 @@ export async function buildPlaylist({
 
   if (pool.size === 0) {
     try {
-      const popular = await tmdbFetch("/movie/popular?page=1", apiKey);
+      const popular = await tmdbFetch(`/${endpointType}/popular?page=1`, apiKey);
       for (const item of popular?.results || []) {
         addCandidate(item, { source: "popular" });
       }
@@ -336,6 +353,7 @@ export async function buildPlaylist({
     query: queryText,
     genre: genre || "",
     terms: cleanTerms,
+    mediaType: type,
   };
 }
 

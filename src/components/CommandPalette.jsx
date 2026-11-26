@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import { translate as tr } from "../utils/i18n";
 import useFocusTrap from "../utils/useFocusTrap";
 import { SearchIcon } from "./Icons";
 
@@ -11,42 +12,42 @@ function buildCommands({ onNavigate, onSearch, onShowShortcuts, onClose }) {
   return [
     {
       id: "home",
-      label: "Go to Home",
+      label: tr("command.goHome"),
       hint: "Home",
       keywords: "home start discover",
       run: go("home"),
     },
     {
       id: "library",
-      label: "Go to Library & History",
+      label: tr("command.goLibrary"),
       hint: "Library",
       keywords: "library history saved watchlist",
       run: go("history"),
     },
     {
       id: "playlists",
-      label: "Go to Playlists",
+      label: tr("command.goPlaylists"),
       hint: "Playlists",
       keywords: "playlist mood collection",
       run: go("playlists"),
     },
     {
       id: "downloads",
-      label: "Go to Downloads",
+      label: tr("command.goDownloads"),
       hint: "Downloads",
       keywords: "download offline files",
       run: go("downloads"),
     },
     {
       id: "settings",
-      label: "Go to Settings",
+      label: tr("command.goSettings"),
       hint: "Settings",
       keywords: "settings preferences options",
       run: go("settings"),
     },
     {
       id: "search",
-      label: "Search movies, series and people",
+      label: tr("command.search"),
       hint: "Ctrl+F",
       keywords: "search find title person",
       run: () => {
@@ -56,7 +57,7 @@ function buildCommands({ onNavigate, onSearch, onShowShortcuts, onClose }) {
     },
     {
       id: "shortcuts",
-      label: "Show keyboard shortcuts",
+      label: tr("command.shortcuts"),
       hint: "?",
       keywords: "help keys keyboard shortcuts",
       run: () => {
@@ -125,7 +126,7 @@ export default function CommandPalette({
       className="command-overlay"
       role="dialog"
       aria-modal="true"
-      aria-label="Command palette"
+      aria-label={tr("command.commandPalette")}
       onClick={(event) => event.target === event.currentTarget && onClose?.()}
     >
       <div className="command-palette" ref={dialogRef} tabIndex={-1}>
@@ -141,8 +142,8 @@ export default function CommandPalette({
               setHighlight(0);
             }}
             onKeyDown={onKeyDown}
-            placeholder="Go to a page, search, or run a command…"
-            aria-label="Command palette"
+            placeholder={tr("command.goToAPageSearchOrRunACommand")}
+            aria-label={tr("command.commandPalette")}
             aria-controls="command-list"
             aria-activedescendant={
               filtered[activeIndex] ? `command-${filtered[activeIndex].id}` : undefined
@@ -153,7 +154,7 @@ export default function CommandPalette({
 
         <div className="command-list" id="command-list" role="listbox">
           {filtered.length === 0 ? (
-            <div className="command-empty">No commands match “{query}”.</div>
+            <div className="command-empty">{tr("command.noMatch", { query })}</div>
           ) : (
             filtered.map((command, index) => (
               <button
@@ -174,9 +175,9 @@ export default function CommandPalette({
         </div>
 
         <div className="command-footer">
-          <span>↑↓ to navigate</span>
-          <span>Enter to select</span>
-          <span>Esc to close</span>
+          <span>{tr("command.navigateHint")}</span>
+          <span>{tr("command.enterToSelect")}</span>
+          <span>{tr("command.escToClose")}</span>
         </div>
       </div>
     </div>

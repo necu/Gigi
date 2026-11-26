@@ -14,8 +14,8 @@ function getTmdbLanguage() {
 }
 
 // Append the language query param to a TMDB path.
-function withLanguage(path) {
-  const lang = getTmdbLanguage();
+function withLanguage(path, language = null) {
+  const lang = language || getTmdbLanguage();
   const sep = path.includes("?") ? "&" : "?";
   return `${path}${sep}language=${lang}`;
 }
@@ -75,8 +75,11 @@ function _releaseSlot() {
 // title/credits endpoint now share one network request instead of racing.
 const _tmdbInflight = new Map(); // key → Promise<data>
 
-export const tmdbFetch = async (path, apiKey) => {
-  const localizedPath = withLanguage(path);
+export const tmdbFetch = async (path, apiKey, options = null) => {
+  // The third argument is either a language override ("en-US") or the legacy
+  // fetch options object some callers pass. Only a string changes the URL.
+  const language = typeof options === "string" ? options : null;
+  const localizedPath = withLanguage(path, language);
   const cacheKey = `${apiKey}|${localizedPath}`;
   const cached = _tmdbCache.get(cacheKey);
   if (cached && Date.now() < cached.expiresAt) return cached.data;
@@ -313,9 +316,6 @@ export const PLAYER_SOURCES = [
     tvUrl: (_id, _season, _ep) => "https://hianime.at",
   },
 ];
-
-// Sources that require a transparent webRequest intercept to load properly
-export const NEEDS_INTERCEPT = ["vidsrc", "devideosrc", "frembed", "kinohub"];
 
 export const getSourceUrl = (
   sourceId,

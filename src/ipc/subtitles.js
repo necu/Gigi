@@ -5,8 +5,6 @@
 const { ipcMain } = require("electron");
 const path = require("path");
 const fs = require("fs");
-const https = require("https");
-const http = require("http");
 const os = require("os");
 const zlib = require("zlib");
 

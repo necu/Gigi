@@ -1,5 +1,6 @@
 import { useRef } from "react";
 import useFocusTrap from "../utils/useFocusTrap";
+import { translate as tr } from "../utils/i18n";
 
 // Keyboard Shortcuts reference modal
 export default function KeyboardShortcutsModal({ onClose }) {
@@ -68,7 +69,7 @@ export default function KeyboardShortcutsModal({ onClose }) {
               color: "var(--text)",
             }}
           >
-            KEYBOARD SHORTCUTS
+            {tr("shortcuts.keyboardShortcuts")}
           </div>
           <button
             onClick={onClose}
@@ -158,7 +159,7 @@ export default function KeyboardShortcutsModal({ onClose }) {
             textTransform: "uppercase",
           }}
         >
-          Controller
+          {tr("shortcuts.controller")}
         </div>
         <div
           style={{
@@ -245,10 +246,10 @@ export default function KeyboardShortcutsModal({ onClose }) {
                 marginBottom: 2,
               }}
             >
-              Need help or found a bug?
+              {tr("shortcuts.needHelpOrFoundABug")}
             </div>
             <div style={{ fontSize: 12, color: "var(--text3)" }}>
-              Open an issue or browse the README on GitHub
+              {tr("shortcuts.openAnIssueOrBrowseTheReadmeOnGithub")}
             </div>
           </div>
           <a

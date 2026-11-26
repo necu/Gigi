@@ -28,6 +28,7 @@ export const SORT_OPTIONS = [
   { value: "rating", label: "Best rated" },
   { value: "year", label: "Newest first" },
   { value: "status", label: "Status" },
+  { value: "favorite", label: "Favorites first" },
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -106,6 +107,7 @@ export function normalizeEntry(item, key, index = 0, now = Date.now()) {
     addedAt,
     updatedAt: asNumber(item.updatedAt) ?? addedAt,
     status: normalizeStatus(item.status),
+    favorite: !!item.favorite,
     tags: uniq(item.tags),
     collections: uniq(item.collections),
     personalRating: normalizeRating(item.personalRating),
@@ -248,7 +250,7 @@ export function addItem(state, item, patch = {}) {
 
   const now = Date.now();
   const entry = normalizeEntry(
-    { ...(existing || {}), ...item, ...patch },
+    { ...existing, ...item, ...patch },
     key,
     0,
     now,
@@ -352,6 +354,7 @@ export function buildWatchlistView(state, options = {}) {
     query = "",
     types = [],
     statuses = [],
+    favoritesOnly = false,
     tags = [],
     tagGroups = {},
     collection = null,
@@ -368,6 +371,7 @@ export function buildWatchlistView(state, options = {}) {
     if (!matchesQuery(entry, query)) return false;
     if (!matchesTypes(entry, types)) return false;
     if (statuses.length > 0 && !statuses.includes(entry.status)) return false;
+    if (favoritesOnly && !entry.favorite) return false;
     if (tags.length > 0 && !tags.some((tag) => entry.tags.includes(tag)))
       return false;
     // One tag per feeling dimension: AND across dimensions, so choosing
@@ -406,6 +410,11 @@ export function buildWatchlistView(state, options = {}) {
         (a, b) => (statusRank(a.status) - statusRank(b.status)) * direction,
       );
       break;
+    case "favorite":
+      sorted.sort(
+        (a, b) => (Number(b.favorite) - Number(a.favorite)) * direction,
+      );
+      break;
     default:
       // manual: keep the stored order (direction is ignored on purpose)
       break;
@@ -423,11 +432,13 @@ export function buildWatchlistView(state, options = {}) {
   let movies = 0;
   let tv = 0;
   let anime = 0;
+  let favorites = 0;
 
   for (const entry of all) {
     if (entry.media_type === "movie") movies += 1;
     else if (entry.media_type === "tv") tv += 1;
     if (entry.isAnime) anime += 1;
+    if (entry.favorite) favorites += 1;
     if (entry.status in statusCounts) statusCounts[entry.status] += 1;
     for (const tag of entry.tags || []) {
       if (tag) tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
@@ -450,6 +461,7 @@ export function buildWatchlistView(state, options = {}) {
     movies,
     tv,
     anime,
+    favorites,
     statuses: statusCounts,
     tags: countValues(tagCounts),
     collections: countValues(collectionCounts),

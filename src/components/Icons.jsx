@@ -44,6 +44,16 @@ export const BookmarkFillIcon = () => (
     <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
   </svg>
 );
+export const HeartIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8l1.1 1.1L12 21.2l7.8-7.7 1.1-1.1a5.5 5.5 0 0 0-.1-7.8Z" />
+  </svg>
+);
+export const HeartFillIcon = () => (
+  <svg viewBox="0 0 24 24" fill="currentColor">
+    <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8l1.1 1.1L12 21.2l7.8-7.7 1.1-1.1a5.5 5.5 0 0 0-.1-7.8Z" />
+  </svg>
+);
 export const PlayIcon = () => (
   <svg viewBox="0 0 24 24" fill="currentColor">
     <polygon points="5 3 19 12 5 21 5 3" />
@@ -385,5 +395,112 @@ export const CastIcon = ({ size = 20 }) => (
     xmlns="http://www.w3.org/2000/svg"
   >
     <path d="M16 15.503A5.041 5.041 0 1 0 16 5.42a5.041 5.041 0 0 0 0 10.083zm0 2.215c-6.703 0-11 3.699-11 5.5v3.363h22v-3.363c0-2.178-4.068-5.5-11-5.5z" />
+  </svg>
+);
+
+export const VolumeIcon = ({ size = 16, muted = false }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M11 5L6 9H3v6h3l5 4V5z" />
+    {muted ? (
+      <>
+        <line x1="16" y1="9" x2="21" y2="15" />
+        <line x1="21" y1="9" x2="16" y2="15" />
+      </>
+    ) : (
+      <>
+        <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+        <path d="M18.5 6a9 9 0 0 1 0 12" />
+      </>
+    )}
+  </svg>
+);
+
+export const BoltIcon = ({ size = 14 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <path d="M13 2L4.5 13.5H11l-1 8.5L19.5 10H13l0-8z" />
+  </svg>
+);
+
+export const FullscreenIcon = ({ size = 16, exit = false }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    {exit ? (
+      <>
+        <path d="M9 3H3v6M15 3h6v6M9 21H3v-6M21 15v6h-6" />
+      </>
+    ) : (
+      <>
+        <path d="M3 9V3h6M21 9V3h-6M3 15v6h6M21 15v6h-6" />
+      </>
+    )}
+  </svg>
+);
+
+export const PipIcon = ({ size = 16 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <rect x="2" y="4" width="20" height="16" rx="2" />
+    <rect x="12" y="12" width="7" height="5" rx="1" />
+  </svg>
+);
+
+export const RetryIcon = ({ size = 15 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M20 11a8 8 0 1 0-2.3 5.7" />
+    <polyline points="20 4 20 11 13 11" />
+  </svg>
+);
+
+export const SleepIcon = ({ size = 15 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M21 12.8A8.5 8.5 0 1 1 11.2 3a6.5 6.5 0 0 0 9.8 9.8z" />
   </svg>
 );

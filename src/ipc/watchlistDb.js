@@ -14,7 +14,7 @@ const path = require("path");
 const fs = require("fs");
 const { randomUUID } = require("crypto");
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 4;
 const DB_FILENAME = "streambert.db";
 
 let DatabaseSync = null;
@@ -135,6 +135,19 @@ CREATE INDEX IF NOT EXISTS idx_playlist_items_position
   ON playlist_items(playlist_id, position);
 `;
 
+// v3: distinguish mood playlists from person filmographies and keep the
+// snapshot metadata needed to present a filmography properly.
+const SCHEMA_V3 = `
+ALTER TABLE playlists ADD COLUMN kind TEXT NOT NULL DEFAULT 'mood';
+ALTER TABLE playlists ADD COLUMN meta TEXT NOT NULL DEFAULT '{}';
+`;
+
+// v4: a real favourite, independent from "saved to the library".
+const SCHEMA_V4 = `
+ALTER TABLE entries ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX IF NOT EXISTS idx_entries_favorite ON entries(is_favorite);
+`;
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function jsonParse(value, fallback) {
@@ -223,6 +236,14 @@ function migrate(db) {
       db.exec(SCHEMA_V2);
       current = 2;
     }
+    if (current < 3) {
+      db.exec(SCHEMA_V3);
+      current = 3;
+    }
+    if (current < 4) {
+      db.exec(SCHEMA_V4);
+      current = 4;
+    }
     db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
     db.exec("COMMIT");
   } catch (error) {
@@ -269,6 +290,7 @@ function rowToEntry(row) {
     addedAt: row.added_at,
     updatedAt: row.updated_at,
     status: row.status || "planned",
+    favorite: !!row.is_favorite,
     tags: [],
     collections: [],
     personalRating: row.personal_rating,
@@ -302,6 +324,7 @@ function entryToParams(entry, key) {
     asNumber(entry.personalRating),
     entry.notes || "",
     entry.lastEpisode ? JSON.stringify(entry.lastEpisode) : null,
+    toBoolInt(entry.favorite),
   ];
 }
 
@@ -455,15 +478,15 @@ const INSERT_SQL = `INSERT INTO entries (
   key, tmdb_id, media_type, title, poster_path, backdrop_path, year,
   vote_average, vote_count, popularity, overview, original_language,
   origin_country, genres, is_anime, runtime, added_at, updated_at, status,
-  personal_rating, notes, last_episode, position
-) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
+  personal_rating, notes, last_episode, is_favorite, position
+) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
 
 const UPDATE_SQL = `UPDATE entries SET
   tmdb_id = ?, media_type = ?, title = ?, poster_path = ?, backdrop_path = ?,
   year = ?, vote_average = ?, vote_count = ?, popularity = ?, overview = ?,
   original_language = ?, origin_country = ?, genres = ?, is_anime = ?,
   runtime = ?, added_at = ?, updated_at = ?, status = ?, personal_rating = ?,
-  notes = ?, last_episode = ?
+  notes = ?, last_episode = ?, is_favorite = ?
 WHERE key = ?`;
 
 function writeEntry(db, key, entry, position) {
@@ -490,7 +513,7 @@ function upsertEntry(entry, patch) {
   if (!db) return { ok: false, error: _unavailableReason };
   const key = normalizeKey(null, entry);
   if (!key) return { ok: false, error: "invalid entry" };
-  const merged = { ...entry, ...(patch || {}) };
+  const merged = { ...entry, ...patch };
   const now = Date.now();
   const existing = getEntry(key);
   if (existing) {
@@ -672,6 +695,31 @@ function normalizePlaylistItem(item) {
       ? item.origin_country
       : [],
     runtime: asInt(item.runtime),
+    roles: uniq(item.roles || [])
+      .map((role) => String(role).trim())
+      .filter(Boolean)
+      .slice(0, 8),
+  };
+}
+
+function normalizePersonMeta(input) {
+  if (!input || typeof input !== "object") return null;
+  const personId = asInt(input.personId);
+  if (!personId) return null;
+  const yearStart = asInt(input.yearStart);
+  const yearEnd = asInt(input.yearEnd);
+  return {
+    personId,
+    personName: String(input.personName || "").trim().slice(0, 120),
+    profilePath:
+      typeof input.profilePath === "string"
+        ? input.profilePath.slice(0, 300)
+        : null,
+    department: String(input.department || "").trim().slice(0, 80),
+    filterId: String(input.filterId || "all").trim().slice(0, 40) || "all",
+    filterLabel: String(input.filterLabel || "").trim().slice(0, 80),
+    yearStart: yearStart || null,
+    yearEnd: yearEnd || null,
   };
 }
 
@@ -688,8 +736,12 @@ function normalizePlaylist(input) {
     seen.add(key);
     items.push(item);
   }
+  const personMeta =
+    source.kind === "person" ? normalizePersonMeta(source.meta) : null;
   return {
     id: String(source.id || randomUUID()),
+    kind: personMeta ? "person" : "mood",
+    meta: personMeta || {},
     name:
       String(source.name || "")
         .trim()
@@ -714,6 +766,8 @@ function playlistRow(row) {
   return {
     id: row.id,
     name: row.name,
+    kind: row.kind === "person" ? "person" : "mood",
+    meta: jsonParse(row.meta, {}),
     moment: row.moment,
     genre: row.genre,
     subgenre: row.subgenre,
@@ -820,8 +874,8 @@ function savePlaylist(playlist) {
       const createdAt = existing?.created_at || data.createdAt || now;
       db.prepare(
         `INSERT INTO playlists
-           (id, name, moment, genre, subgenre, terms, tags, created_at, updated_at, last_opened_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+           (id, name, moment, genre, subgenre, terms, tags, kind, meta, created_at, updated_at, last_opened_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
          ON CONFLICT(id) DO UPDATE SET
            name = excluded.name,
            moment = excluded.moment,
@@ -829,6 +883,8 @@ function savePlaylist(playlist) {
            subgenre = excluded.subgenre,
            terms = excluded.terms,
            tags = excluded.tags,
+           kind = excluded.kind,
+           meta = excluded.meta,
            updated_at = excluded.updated_at`,
       ).run(
         data.id,
@@ -838,6 +894,8 @@ function savePlaylist(playlist) {
         data.subgenre,
         JSON.stringify(data.terms),
         JSON.stringify(data.tags),
+        data.kind,
+        JSON.stringify(data.meta),
         createdAt,
         now,
       );
@@ -900,6 +958,7 @@ function importState(state, options = {}) {
   const order = Array.isArray(state.order) && state.order.length
     ? state.order
     : Object.keys(state.items);
+  let imported = 0;
   try {
     tx(db, () => {
       if (replace) {
@@ -911,18 +970,21 @@ function importState(state, options = {}) {
         db.exec("DELETE FROM collections");
       }
       let position = replace ? 0 : nextPosition(db);
+      const ordered = new Set(order);
       for (const key of order) {
         const entry = state.items[key];
         if (!entry) continue;
         writeEntry(db, key, entry, position++);
+        imported += 1;
       }
       // Anything present in items but missing from order.
       for (const [key, entry] of Object.entries(state.items)) {
-        if (order.includes(key)) continue;
+        if (ordered.has(key)) continue;
         writeEntry(db, key, entry, position++);
+        imported += 1;
       }
     });
-    return { ok: true, imported: position };
+    return { ok: true, imported };
   } catch (error) {
     return { ok: false, error: error.message };
   }

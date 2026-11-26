@@ -11,14 +11,13 @@ import MediaCard from "../components/MediaCard";
 import WatchlistEditModal from "../components/WatchlistEditModal";
 import SectionFrame from "../components/SectionFrame";
 import { ForYouShelf, SagaShelf } from "../components/LibrarySmart";
-import { useT } from "../utils/i18n";
+import { translate as tr, useT } from "../utils/i18n";
 import { loadSectionOrder, saveSectionOrder } from "../utils/sectionLayout";
 import {
   VibeCloudModal,
   VibeFilterPanel,
 } from "../components/LibraryMoodExplorer";
-import { imgUrl } from "../utils/api";
-import { EyeIcon, SearchIcon, WatchedIcon } from "../components/Icons";
+import { EyeIcon, SearchIcon } from "../components/Icons";
 import { useRatings, getRatingForItem } from "../utils/useRatings";
 import { isRestricted } from "../utils/ageRating";
 import { storage, STORAGE_KEYS } from "../utils/storage";
@@ -63,105 +62,6 @@ const LIBRARY_PANELS = ["sagas", "foryou", "vibe", "watchlist", "continue"];
 const LIBRARY_TOP_PANELS = ["sagas", "foryou", "vibe"];
 const LIBRARY_BOTTOM_PANELS = ["watchlist", "continue"];
 
-function relativeWatched(ts) {
-  const value = Number(ts) || 0;
-  if (!value) return "";
-  const diff = Math.max(0, Date.now() - value);
-  if (diff < 60_000) return "ahora";
-  if (diff < 3_600_000) return `hace ${Math.floor(diff / 60_000)} min`;
-  if (diff < 86_400_000) return `hace ${Math.floor(diff / 3_600_000)} h`;
-  if (diff < 7 * 86_400_000) return `hace ${Math.floor(diff / 86_400_000)} d`;
-  return new Date(value).toLocaleDateString("es-ES", {
-    day: "numeric",
-    month: "short",
-  });
-}
-
-/**
- * Permanently visible, minimal watch-history strip. It sticks to the top of
- * the library while scrolling and always shows the last titles played.
- */
-function WatchHistoryRail({ history = [], watched, onSelect, onRemoveHistory }) {
-  return (
-    <section className="history-rail" aria-label="Watch history">
-      <div className="history-rail__head">
-        <div>
-          <div className="history-rail__eyebrow">Watch history</div>
-          <h2 className="history-rail__title">Lo último que has reproducido</h2>
-        </div>
-        <span className="history-rail__count">{history.length}</span>
-      </div>
-      {history.length > 0 ? (
-        <div className="history-rail__list">
-          {history.slice(0, 10).map((item) => {
-            const pk =
-              item.media_type === "movie"
-                ? `movie_${item.id}`
-                : `tv_${item.id}_s${item.season}e${item.episode}`;
-            const isWatched = !!watched?.[pk];
-            return (
-              <div className="history-pill" key={`${pk}_${item.watchedAt}`}>
-                <button
-                  type="button"
-                  className="history-pill__main"
-                  onClick={() => onSelect(item)}
-                  title={item.title}
-                >
-                  <span className="history-pill__poster">
-                    {item.poster_path ? (
-                      <img
-                        src={imgUrl(item.poster_path, "w92")}
-                        alt=""
-                        loading="lazy"
-                        decoding="async"
-                      />
-                    ) : (
-                      <span>{item.title?.slice(0, 1) || "?"}</span>
-                    )}
-                  </span>
-                  <span className="history-pill__copy">
-                    <b>
-                      {item.title}
-                      {isWatched && <WatchedIcon size={12} />}
-                    </b>
-                    <small>
-                      {item.media_type === "tv" &&
-                      item.season != null &&
-                      item.episode != null
-                        ? `S${item.season}E${item.episode}${
-                            item.episodeName ? ` · ${item.episodeName}` : ""
-                          }`
-                        : "Película"}
-                      {" · "}
-                      {relativeWatched(item.watchedAt)}
-                    </small>
-                  </span>
-                </button>
-                {onRemoveHistory && (
-                  <button
-                    type="button"
-                    className="history-pill__remove"
-                    onClick={() => onRemoveHistory(item)}
-                    title="Quitar del historial"
-                    aria-label={`Quitar ${item.title} del historial`}
-                  >
-                    ×
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        <div className="history-rail__empty">
-          Cuando empieces a ver algo, aquí quedará lo último que has
-          reproducido.
-        </div>
-      )}
-    </section>
-  );
-}
-
 function LibraryPage({
   watchlist,
   librarySort,
@@ -172,7 +72,6 @@ function LibraryPage({
   watched,
   onMarkWatched,
   onMarkUnwatched,
-  onRemoveHistory,
   onRemove,
   onRemoveMany,
   onUpdate,
@@ -180,8 +79,11 @@ function LibraryPage({
   onReorder,
   apiKey,
   focusCollection,
+  focusTag,
   isSaved,
   onToggleSave,
+  isFavorite,
+  onToggleFavorite,
   onAddMany,
   onOrganize,
   organizing = false,
@@ -194,6 +96,7 @@ function LibraryPage({
   const deferredQuery = useDeferredValue(query);
   const [typeTab, setTypeTab] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [tagFilter, setTagFilter] = useState(null);
   const [vibeFilters, setVibeFilters] = useState(() =>
     loadVibeFilters(storage),
@@ -289,6 +192,19 @@ function LibraryPage({
     setDir("asc");
   }, [focusCollection]);
 
+  useEffect(() => {
+    if (!focusTag) return;
+    setTagFilter(focusTag);
+    setCollectionFilter("");
+    setTypeTab("all");
+    setStatusFilter("all");
+    setVibeFilters({});
+    saveVibeFilters(storage, {});
+    setQuery("");
+    setActiveView("");
+    setFavoritesOnly(false);
+  }, [focusTag]);
+
   // Restore the last order chosen for this particular saga.
   useEffect(() => {
     if (!collectionFilter) {
@@ -321,6 +237,7 @@ function LibraryPage({
         query: deferredQuery,
         types: typeTab === "all" ? [] : [typeTab],
         statuses: statusFilter === "all" ? [] : [statusFilter],
+        favoritesOnly,
         tags: tagFilter ? [tagFilter] : [],
         tagGroups: vibeFilters,
         collection: collectionFilter || null,
@@ -332,6 +249,7 @@ function LibraryPage({
       deferredQuery,
       typeTab,
       statusFilter,
+      favoritesOnly,
       tagFilter,
       vibeFilters,
       collectionFilter,
@@ -369,6 +287,7 @@ function LibraryPage({
   }, [
     typeTab,
     statusFilter,
+    favoritesOnly,
     tagFilter,
     vibeFilters,
     collectionFilter,
@@ -503,6 +422,7 @@ function LibraryPage({
     query ||
     typeTab !== "all" ||
     statusFilter !== "all" ||
+    favoritesOnly ||
     tagFilter ||
     Object.values(vibeFilters).some(Boolean) ||
     collectionFilter;
@@ -511,6 +431,7 @@ function LibraryPage({
     setQuery("");
     setTypeTab("all");
     setStatusFilter("all");
+    setFavoritesOnly(false);
     setTagFilter(null);
     setVibeFilters({});
     saveVibeFilters(storage, {});
@@ -530,6 +451,7 @@ function LibraryPage({
     setQuery(filters.query || "");
     setTypeTab(filters.typeTab || "all");
     setStatusFilter(filters.statusFilter || "all");
+    setFavoritesOnly(!!filters.favoritesOnly);
     setTagFilter(filters.tagFilter || null);
     const nextVibeFilters = normalizeVibeFilters(filters.vibeFilters);
     setVibeFilters(nextVibeFilters);
@@ -545,6 +467,7 @@ function LibraryPage({
       query,
       typeTab,
       statusFilter,
+      favoritesOnly,
       tagFilter,
       vibeFilters,
       collectionFilter,
@@ -591,7 +514,7 @@ function LibraryPage({
               className="btn btn-ghost"
               onClick={() => onOrganize?.({})}
               disabled={organizing}
-              title="Re-derive genres, directors, decades and franchises for the library"
+              title={tr("library.reDeriveGenresDirectorsDecadesAndFranchisesForTh")}
             >
               {organizing
                 ? `${t("library.organizing")}${
@@ -693,7 +616,7 @@ function LibraryPage({
             )}
           </div>
           <div className="saga-order-picker">
-            <label htmlFor="saga-order">Order</label>
+            <label htmlFor="saga-order">{tr("library.order")}</label>
             <select
               id="saga-order"
               className="saga-order-select"
@@ -714,7 +637,7 @@ function LibraryPage({
               setActiveView("");
             }}
           >
-            Close playlist
+            {tr("library.closePlaylist")}
           </button>
         </div>
       )}
@@ -739,7 +662,7 @@ function LibraryPage({
                 setQuery("");
                 setActiveView("");
               }}
-              aria-label="Clear search"
+              aria-label={tr("library.clearSearch")}
             >
               ×
             </button>
@@ -750,11 +673,11 @@ function LibraryPage({
           <select
             value={sort}
             onChange={(event) => handleSortChange(event.target.value)}
-            aria-label="Sort library"
+            aria-label={tr("library.sortLibrary")}
           >
             {SORT_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
-                {option.label}
+                {tr(`librarySort.${option.value}`) || option.label}
               </option>
             ))}
           </select>
@@ -774,7 +697,7 @@ function LibraryPage({
 
         <div className="library-views">
           <div className="library-view-picker">
-            <label htmlFor="library-view">View</label>
+            <label htmlFor="library-view">{tr("library.view")}</label>
             <select
               id="library-view"
               value={activeView}
@@ -785,21 +708,21 @@ function LibraryPage({
                 if (view) applyView(view);
                 else setActiveView("");
               }}
-              aria-label="Saved library view"
+              aria-label={tr("library.savedLibraryView")}
             >
-              <option value="">Custom filters</option>
-              <optgroup label="Presets">
+              <option value="">{tr("library.customFilters")}</option>
+              <optgroup label={tr("library.presets")}>
                 {BUILTIN_LIBRARY_VIEWS.map((view) => (
                   <option key={view.id} value={view.id}>
-                    {view.name}
+                    {tr(`libraryView.${view.id}`) || view.name}
                   </option>
                 ))}
               </optgroup>
               {customViews.length > 0 && (
-                <optgroup label="My views">
+                <optgroup label={tr("library.myViews")}>
                   {customViews.map((view) => (
                     <option key={view.id} value={view.id}>
-                      {view.name}
+                      {tr(`libraryView.${view.id}`) || view.name}
                     </option>
                   ))}
                 </optgroup>
@@ -810,8 +733,8 @@ function LibraryPage({
                 type="button"
                 className="library-view-delete"
                 onClick={handleDeleteView}
-                title="Delete this saved view"
-                aria-label="Delete this saved view"
+                title={tr("library.deleteThisSavedView")}
+                aria-label={tr("library.deleteThisSavedView")}
               >
                 ×
               </button>
@@ -821,9 +744,9 @@ function LibraryPage({
             type="button"
             className="btn btn-ghost"
             onClick={() => setShowSaveView((current) => !current)}
-            title="Save the current filters as a reusable view"
+            title={tr("library.saveTheCurrentFiltersAsAReusableView")}
           >
-            Save view
+            {tr("library.saveView")}
           </button>
         </div>
       </div>
@@ -844,8 +767,8 @@ function LibraryPage({
               }
             }}
             maxLength={40}
-            placeholder="Name this view, e.g. Short anime"
-            aria-label="Name this library view"
+            placeholder={tr("library.nameThisViewEGShortAnime")}
+            aria-label={tr("library.nameThisLibraryView")}
           />
           <button
             type="button"
@@ -853,7 +776,7 @@ function LibraryPage({
             onClick={handleSaveView}
             disabled={!viewName.trim()}
           >
-            Save
+            {tr("library.save")}
           </button>
           <button
             type="button"
@@ -863,12 +786,12 @@ function LibraryPage({
               setViewName("");
             }}
           >
-            Cancel
+            {tr("library.cancel")}
           </button>
         </div>
       )}
 
-      <div className="library-tabs" role="tablist" aria-label="Library type">
+      <div className="library-tabs" role="tablist" aria-label={tr("library.libraryType")}>
         {TYPE_TABS.map((tab) => (
           <button
             key={tab.id}
@@ -903,7 +826,7 @@ function LibraryPage({
           }}
           aria-pressed={statusFilter === "all"}
         >
-          All statuses
+          {tr("library.allStatuses")}
         </button>
         {WATCH_STATUSES.map((status) => (
           <button
@@ -917,10 +840,22 @@ function LibraryPage({
             aria-pressed={statusFilter === status.id}
           >
             <span className="filter-dot" />
-            {status.label}
+            {tr(`status.${status.id}`) || status.label}
             <span className="filter-count">{facets.statuses[status.id]}</span>
           </button>
         ))}
+
+        <button
+          className={`filter-chip${favoritesOnly ? " active" : ""}`}
+          onClick={() => {
+            setFavoritesOnly((current) => !current);
+            setActiveView("");
+          }}
+          aria-pressed={favoritesOnly}
+        >
+          ♥ {t("library.favoritesOnly")}
+          <span className="filter-count">{facets.favorites}</span>
+        </button>
 
         {facets.collections.length > 0 && (
           <select
@@ -930,9 +865,9 @@ function LibraryPage({
               setCollectionFilter(event.target.value);
               setActiveView("");
             }}
-            aria-label="Filter by collection"
+            aria-label={tr("library.filterByCollection")}
           >
-            <option value="">All collections</option>
+            <option value="">{tr("library.allCollections")}</option>
             {facets.collections.map((collection) => (
               <option key={collection.value} value={collection.value}>
                 {collection.value} ({collection.count})
@@ -946,7 +881,7 @@ function LibraryPage({
             className="filter-chip filter-chip--clear"
             onClick={clearFilters}
           >
-            Reset filters <span aria-hidden="true">×</span>
+            {tr("library.resetFilters")} <span aria-hidden="true">×</span>
           </button>
         )}
       </div>
@@ -1043,6 +978,8 @@ function LibraryPage({
                       restricted={restricted}
                       isSaved
                       onToggleSave={() => onRemove(key)}
+                      isFavorite={isFavorite?.(entry)}
+                      onToggleFavorite={onToggleFavorite}
                       onEdit={() => setEditingKey(key)}
                       selectable={selectMode}
                       selected={selected.has(key)}
@@ -1057,8 +994,8 @@ function LibraryPage({
                             event.stopPropagation();
                             moveSaga(key, -1);
                           }}
-                          aria-label="Move earlier in this saga"
-                          title="Move earlier"
+                          aria-label={tr("library.moveEarlierInThisSaga")}
+                          title={tr("library.moveEarlier")}
                         >
                           ↑
                         </button>
@@ -1069,8 +1006,8 @@ function LibraryPage({
                             event.stopPropagation();
                             moveSaga(key, 1);
                           }}
-                          aria-label="Move later in this saga"
-                          title="Move later"
+                          aria-label={tr("library.moveLaterInThisSaga")}
+                          title={tr("library.moveLater")}
                         >
                           ↓
                         </button>
@@ -1114,6 +1051,9 @@ function LibraryPage({
                   onMarkUnwatched={onMarkUnwatched}
                   ageRating={r.cert}
                   restricted={restr}
+                  isSaved={isSaved?.(item)}
+                  isFavorite={isFavorite?.(item)}
+                  onToggleFavorite={onToggleFavorite}
                 />
               );
             })}
@@ -1126,9 +1066,9 @@ function LibraryPage({
       {history.length === 0 && facets.total === 0 && (
         <div className="empty-state">
           <EyeIcon />
-          <h3>Nothing here yet</h3>
+          <h3>{tr("library.nothingHereYet")}</h3>
           <p>
-            Start watching a movie or series and your history will appear here.
+            {tr("library.startWatchingAMovieOrSeriesAndYourHistoryWillApp")}
           </p>
         </div>
       )}
@@ -1143,7 +1083,7 @@ function LibraryPage({
       />
 
       {selected.size > 0 && (
-        <div className="bulk-bar" role="region" aria-label="Bulk actions">
+        <div className="bulk-bar" role="region" aria-label={tr("library.bulkActions")}>
           <div className="bulk-count">
             {selected.size} selected
             {hasFilters ? ` · filtered view` : ""}
@@ -1159,14 +1099,14 @@ function LibraryPage({
                   className="filter-dot"
                   style={{ "--chip-color": status.color }}
                 />
-                {status.label}
+                {tr(`status.${status.id}`) || status.label}
               </button>
             ))}
             <button className="btn btn-danger" onClick={bulkRemove}>
-              Remove
+              {tr("library.remove")}
             </button>
             <button className="btn btn-ghost" onClick={clearSelection}>
-              Clear
+              {tr("library.clear")}
             </button>
           </div>
         </div>

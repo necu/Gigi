@@ -6,6 +6,10 @@ import { storage } from "./storage";
 export const HOME_ROWS = [
   { id: "continue", label: "Continue Watching" },
   { id: "recent", label: "Recently Added" },
+  { id: "favorites", label: "Favourites" },
+  { id: "favoritePeople", label: "Favourite People" },
+  { id: "favoritePeoplePicks", label: "From Favourite People" },
+  { id: "smartCollections", label: "Smart Collections" },
   { id: "recommended", label: "Recommended for You" },
   { id: "trendingMovies", label: "Trending Movies" },
   { id: "trendingTV", label: "Trending Series" },

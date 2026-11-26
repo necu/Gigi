@@ -1145,8 +1145,9 @@ export default function DownloadModal({
                         href="#"
                         onClick={(e) => {
                           e.preventDefault();
-                          isElectron &&
+                          if (isElectron) {
                             window.electron.openExternal(releaseUrl);
+                          }
                         }}
                       >
                         github.com/truelockmc/vid-dl-cli-only/releases/latest

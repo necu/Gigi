@@ -32,7 +32,6 @@ import {
   isAnimeContent,
   ANIME_DEFAULT_SOURCE,
   NON_ANIME_DEFAULT_SOURCE,
-  NEEDS_INTERCEPT,
   CLEAN_USER_AGENT,
   sourceUsesCleanUa,
   getNextNonAsyncSource,
@@ -224,7 +223,7 @@ function EpisodeDesc({ overview, episodeName }) {
             setOpen(true);
           }}
         >
-          More
+          {tr("tv.more")}
         </button>
       </div>
 
@@ -245,7 +244,7 @@ function EpisodeDesc({ overview, episodeName }) {
               className="ep-desc-popup-close"
               onClick={() => setOpen(false)}
             >
-              Close
+              {tr("tv.close")}
             </button>
           </div>
         </div>
@@ -255,133 +254,6 @@ function EpisodeDesc({ overview, episodeName }) {
 }
 
 // Injected into the webview DOM
-const INJECT_SKIP_CONTROLS = `
-(function() {
-  if (window.__skipControlsInjected) return;
-  var style = document.createElement('style');
-  style.innerHTML =
-    '*:focus, *:focus-visible {' +
-    'outline: none !important;' +
-    'box-shadow: none !important;' +
-    '}' +
-    'video:focus, video:focus-visible {' +
-    'outline: none !important;' +
-    'box-shadow: none !important;' +
-    '}';
-  document.head.appendChild(style);
-  window.__skipControlsInjected = true;
-
-  var BACK_SVG = '<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" style=\"width:26px;height:26px\"><polyline points=\"1 4 1 10 7 10\"/><path d=\"M3.51 15a9 9 0 1 0 .49-4.53\"/><text x=\"13.5\" y=\"15.5\" text-anchor=\"middle\" font-size=\"6.5\" fill=\"currentColor\" stroke=\"none\" font-weight=\"800\" font-family=\"system-ui,sans-serif\">15</text></svg>';
-  var FWD_SVG  = '<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" style=\"width:26px;height:26px\"><polyline points=\"23 4 23 10 17 10\"/><path d=\"M20.49 15a9 9 0 1 1-.49-4.53\"/><text x=\"10.5\" y=\"15.5\" text-anchor=\"middle\" font-size=\"6.5\" fill=\"currentColor\" stroke=\"none\" font-weight=\"800\" font-family=\"system-ui,sans-serif\">15</text></svg>';
-
-  var wrap = document.createElement('div');
-  wrap.id = '__skip-ui';
-  wrap.style.cssText = [
-    'position:fixed',
-    'top:0','left:0','right:0','bottom:0',
-    'pointer-events:none',
-    'z-index:2147483647',
-    'opacity:0',
-    'transition:opacity 0.25s ease',
-  ].join(';');
-
-  function makeBtn(seconds, svg, label, side) {
-    var btn = document.createElement('button');
-    btn.innerHTML = svg + '<span style="font-size:11px;font-family:system-ui,sans-serif">' + label + '</span>';
-    btn.setAttribute('tabindex', '-1');
-    btn.title = label;
-    btn.style.cssText = [
-      'pointer-events:auto',
-      'background:rgba(0,0,0,0.72)',
-      'border:1px solid rgba(255,255,255,0.18)',
-      'border-radius:8px',
-      'color:white',
-      'cursor:pointer',
-      'padding:10px 18px',
-      'display:flex',
-      'align-items:center',
-      'gap:7px',
-      'backdrop-filter:blur(6px)',
-      '-webkit-backdrop-filter:blur(6px)',
-      'transition:background 0.15s',
-      'font-size:12px',
-    ].join(';');
-    btn.style.position = 'absolute';
-    btn.style.top = '50%';
-    btn.style.transform = 'translateY(-50%)';
-
-    if (side === 'left') {
-      btn.style.left = '24px';
-    } else {
-      btn.style.right = '24px';
-    }
-    btn.onmouseenter = function() { btn.style.background = 'rgba(229,9,20,0.85)'; btn.style.borderColor = '#e5091466'; };
-    btn.onmouseleave = function() { btn.style.background = 'rgba(0,0,0,0.72)'; btn.style.borderColor = 'rgba(255,255,255,0.18)'; };
-    btn.onclick = function(e) {
-      e.stopPropagation();
-      var v = document.querySelector('video');
-      if (v) v.currentTime = Math.max(0, Math.min(v.duration || 0, v.currentTime + seconds));
-      show();
-    };
-    return btn;
-  }
-
-  wrap.appendChild(makeBtn(-15, BACK_SVG, '−15s', 'left'));
-  wrap.appendChild(makeBtn(15,  FWD_SVG,  '+15s', 'right'));
-  document.documentElement.appendChild(wrap);
-
-  var idleTimer;
-  function show() {
-    wrap.style.opacity = '1';
-    clearTimeout(idleTimer);
-    idleTimer = setTimeout(function() { wrap.style.opacity = '0'; }, 2500);
-  }
-  document.addEventListener('mousemove', show, true);
-  document.addEventListener('keydown', function(e) {
-    const active = document.activeElement;
-
-    // Keine Shortcuts wenn User tippt
-    if (
-      active &&
-      active.matches('input, textarea, [contenteditable="true"]')
-    ) {
-      return;
-    }
-
-    // Key repeat blockieren (wenn Taste gehalten wird)
-    if (e.repeat) return;
-
-    const v = document.querySelector('video');
-    if (!v) return;
-
-    // Throttle (max 1 Aktion alle 250ms)
-    const now = Date.now();
-    if (window.__skipKeyCooldown && now < window.__skipKeyCooldown) return;
-    window.__skipKeyCooldown = now + 250;
-
-    if (e.code === 'Space') {
-      e.preventDefault(); // verhindert Scrollen
-      if (v.paused) v.play();
-      else v.pause();
-      show();
-    }
-
-    if (e.key === 'ArrowLeft') {
-      v.currentTime = Math.max(0, v.currentTime - 10);
-      show();
-    }
-
-    if (e.key === 'ArrowRight') {
-      v.currentTime = Math.min(v.duration || 0, v.currentTime + 10);
-      show();
-    }
-  }, true);
-})();
-`;
-
-// ── Release-date helpers ─────────────────────────────────────────────────────
-// Parses "YYYY-MM-DD" as LOCAL midnight (new Date("YYYY-MM-DD") would be UTC
-// midnight and shift the release day depending on the user's timezone).
 function parseAirDate(airDate) {
   if (!airDate) return null;
   const [y, m, d] = String(airDate).slice(0, 10).split("-").map(Number);
@@ -438,6 +310,7 @@ export default function TVPage({
   isSavedItem,
   onToggleSaveItem,
   onOpenPerson,
+  onPlayNext,
 }) {
   const t = useT();
   const [details, setDetails] = useState(null);
@@ -517,6 +390,7 @@ export default function TVPage({
   const [introSkipMode] = useState(() => getIntroSkipMode());
   const sourceRef = useRef(null);
   const playerWrapRef = useRef(null);
+  const queueNextRef = useRef(false);
   const webviewRef = useRef(null);
   const resumeAppliedRef = useRef(false);
   const episodeRestoredRef = useRef(false);
@@ -1527,20 +1401,6 @@ export default function TVPage({
     return () => window.removeEventListener("keydown", onKey);
   }, [playerFullscreen, togglePlayerFullscreen]);
 
-  // Skip backward/forward by N seconds via webview JS injection
-  const seekBy = useCallback(async (seconds) => {
-    try {
-      const wv = webviewRef.current;
-      if (!wv) return;
-      await wv.executeJavaScript(`
-        (() => {
-          const v = document.querySelector('video');
-          if (v) v.currentTime = Math.max(0, Math.min(v.duration || 0, v.currentTime + ${seconds}));
-        })()
-      `);
-    } catch {}
-  }, []);
-
   // ── Controller support: play/pause, seek, volume, fullscreen ─────────────
   // Runs for any source (not just async ones) since it only needs a <video>
   // element inside the webview. Also lets the app-wide gamepad navigation
@@ -1898,7 +1758,7 @@ export default function TVPage({
                 )}
               </div>
               <div className="detail-info">
-                <div className="detail-type">Series</div>
+                <div className="detail-type">{tr("tv.series")}</div>
                 <div className="detail-title">{title}</div>
                 <div className="genres">
                   {displayGenres.map((g) => (
@@ -1940,7 +1800,7 @@ export default function TVPage({
                     <span className="age-rating-pill-cert">{rating.cert}</span>
                     {restricted && (
                       <span className="age-rating-pill-label">
-                        Inappropriate for your age setting
+                        {tr("tv.inappropriateForYourAgeSetting")}
                       </span>
                     )}
                   </div>
@@ -2078,13 +1938,13 @@ export default function TVPage({
                   >
                     <span style={{ fontSize: 28 }}>⚠️</span>
                     <span style={{ fontSize: 14, color: "var(--text2)" }}>
-                      Episode not found on HiAnime
+                      {tr("tv.episodeNotFoundOnHianime")}
                     </span>
                     <span style={{ fontSize: 12, color: "var(--text3)" }}>
                       {resolveError}
                     </span>
                     <span style={{ fontSize: 12, color: "var(--text3)" }}>
-                      Try a different source, or switch sub/dub.
+                      {tr("tv.tryADifferentSourceOrSwitchSubDub")}
                     </span>
                   </div>
                 )}
@@ -2137,7 +1997,7 @@ export default function TVPage({
                         fontWeight: 600,
                       }}
                     >
-                      Playing in pop-out window
+                      {tr("tv.playingInPopOutWindow")}
                     </span>
                     <span
                       style={{
@@ -2147,7 +2007,7 @@ export default function TVPage({
                         maxWidth: 260,
                       }}
                     >
-                      Closing the pop-out will reload the player here.
+                      {tr("tv.closingThePopOutWillReloadThePlayerHere")}
                     </span>
                     <button
                       className="player-overlay-btn"
@@ -2203,7 +2063,7 @@ export default function TVPage({
                           marginBottom: "8px",
                         }}
                       >
-                        Up Next
+                        {tr("tv.upNext")}
                       </div>
 
                       {/* Cover Still */}
@@ -2310,7 +2170,7 @@ export default function TVPage({
                           }}
                           onClick={playNow}
                         >
-                          Play Now
+                          {tr("tv.playNow")}
                         </button>
                         <button
                           className="btn btn-ghost"
@@ -2322,7 +2182,7 @@ export default function TVPage({
                           }}
                           onClick={cancelAutoplay}
                         >
-                          Cancel
+                          {tr("tv.cancel")}
                         </button>
                       </div>
                     </div>
@@ -2377,7 +2237,7 @@ export default function TVPage({
                         setMenuPos({ top: rect.bottom + 6, left: rect.left });
                       setShowSourceMenu((v) => !v);
                     }}
-                    title="Change source"
+                    title={tr("tv.changeSource")}
                   >
                     <SourceIcon />
                     {PLAYER_SOURCES.find((s) => s.id === playerSource)?.label ??
@@ -2400,7 +2260,7 @@ export default function TVPage({
                         setResolvingUrl(false);
                         setResolveError(null);
                       }}
-                      title="Toggle Sub/Dub"
+                      title={tr("tv.toggleSubDub")}
                     >
                       {dubMode === "sub" ? "SUB" : "DUB"}
                     </button>
@@ -2412,7 +2272,7 @@ export default function TVPage({
                       setShowSourceMenu(false);
                       setShowBlockedModal(true);
                     }}
-                    title="Blocked ads & trackers"
+                    title={tr("tv.blockedAdsAndTrackers")}
                   >
                     <ShieldBlockIcon />
                     {blockedSession > 0 && (
@@ -2538,7 +2398,7 @@ export default function TVPage({
                   {!supportsProgress && (
                     <span
                       className="player-no-progress-hint"
-                      title="No automatic progress tracking for this source"
+                      title={tr("tv.noAutomaticProgressTrackingForThisSource")}
                     >
                       ⚠ no tracking
                     </span>
@@ -2559,7 +2419,39 @@ export default function TVPage({
                   pipOpen={pipOpen}
                   onExit={handlePlayerExit}
                   onSettings={onSettings}
-                  onSession={(state) =>
+                  onNext={
+                    nextEp
+                      ? () => playEpisode(nextEp)
+                      : onPlayNext || null
+                  }
+                  nextLabel={
+                    nextEp
+                      ? `T${selectedSeason} · E${nextEp.episode_number}`
+                      : onPlayNext
+                        ? t("player.nextInQueue")
+                        : ""
+                  }
+                  nextTitle={
+                    !nextEp && onPlayNext ? t("player.nextInQueue") : ""
+                  }
+                  onPip={() => setPipOpen(true)}
+                  onRetry={() => {
+                    try {
+                      webviewRef.current?.reload();
+                    } catch {}
+                  }}
+                  onSession={(state) => {
+                    if (!nextEp && onPlayNext && state.duration > 0) {
+                      if (state.time < state.duration - 3) {
+                        queueNextRef.current = false;
+                      } else if (
+                        state.time >= state.duration - 0.8 &&
+                        !queueNextRef.current
+                      ) {
+                        queueNextRef.current = true;
+                        onPlayNext();
+                      }
+                    }
                     onPlaybackSession?.({
                       page: "tv",
                       id: item.id,
@@ -2570,8 +2462,8 @@ export default function TVPage({
                       time: state.time,
                       duration: state.duration,
                       source: playerSource,
-                    })
-                  }
+                    });
+                  }}
                   title={title}
                   subtitle={
                     selectedEp
@@ -2614,7 +2506,7 @@ export default function TVPage({
                           seasonNum: s.season_number,
                         });
                       }}
-                      title="Right-click to mark season as watched/unwatched"
+                      title={tr("tv.rightClickToMarkSeasonAsWatchedUnwatched")}
                     >
                       {sw === "all" && (
                         <span className="season-watched-icon">✓</span>
@@ -2841,17 +2733,17 @@ const EpisodeCard = memo(function EpisodeCard({
         )}
         {restricted ? (
           <div className="episode-restricted-overlay">
-            🔒<span>Inappropriate for your age</span>
+            🔒<span>{tr("tv.inappropriateForYourAge")}</span>
           </div>
         ) : epUnreleased ? (
           <div className="episode-restricted-overlay">
-            🔒<span>Unreleased</span>
+            🔒<span>{tr("tv.unreleased")}</span>
             <span>{getDaysUntilRelease(ep.air_date)}</span>
           </div>
         ) : isPlaying ? (
           <div className="episode-playing-badge">
             <span className="episode-playing-dot" />
-            Playing
+            {tr("tv.playing")}
           </div>
         ) : (
           <div className="episode-thumb-play">

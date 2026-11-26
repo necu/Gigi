@@ -22,8 +22,6 @@ const DISCOVERY_MAX = 120;
 
 // ── Generic helpers ──────────────────────────────────────────────────────────
 
-const uniq = (values) => [...new Set((values || []).filter(Boolean))];
-
 const uniqById = (list) => {
   const seen = new Set();
   return (list || []).filter((item) => {
@@ -431,20 +429,35 @@ function pickPerson(people, parsed) {
   let bestCloseness = 0;
   for (const person of people || []) {
     if (!person?.id || person.adult) continue;
-    const name = normalizeText(person.name);
-    if (!name) continue;
-    const closeness = fuzzyTokenScore(parsed.text || parsed.fullText, person.name);
+    // TMDB localises person names. "Tarkovsky" is stored as "Andréi
+    // Tarkovski" in Spanish, while a one-credit namesake keeps the English
+    // spelling. Score the localised name plus the English aliases gathered by
+    // the caller so the right person wins in every metadata language.
+    const names = [person.name, ...(person._aliases || [])].filter(Boolean);
+    const normalizedNames = names.map(normalizeText).filter(Boolean);
+    if (normalizedNames.length === 0) continue;
+    const closeness = Math.max(
+      ...names.map((name) =>
+        fuzzyTokenScore(parsed.text || parsed.fullText, name),
+      ),
+    );
     if (closeness < 0.58) continue;
     let score = closeness * 120;
-    if (name === parsed.normalized || name === parsed.fullNormalized) {
+    if (
+      normalizedNames.includes(parsed.normalized) ||
+      normalizedNames.includes(parsed.fullNormalized)
+    ) {
       score += 30;
     } else if (
       parsed.tokens.length > 0 &&
-      parsed.tokens.every((token) => name.includes(token))
+      normalizedNames.some((name) =>
+        parsed.tokens.every((token) => name.includes(token)),
+      )
     ) {
       score += 20;
     }
     score += Math.log10((person.popularity || 0) + 1) * 6;
+    score += Math.min(person.known_for?.length || 0, 3) * 2;
     if (score > bestScore) {
       bestScore = score;
       bestCloseness = closeness;
@@ -491,6 +504,13 @@ export async function searchSmart({ query, apiKey, taste, boosts }) {
     people: tmdbFetch(
       `/search/person?query=${encodedFull}&include_adult=false&page=1`,
       apiKey,
+    ).catch(empty),
+    // English names are aliases: they let a search for "Tarkovsky" find
+    // "Andréi Tarkovski" even when TMDB translated his name.
+    peopleAliases: tmdbFetch(
+      `/search/person?query=${encodedFull}&include_adult=false&page=1`,
+      apiKey,
+      "en-US",
     ).catch(empty),
   };
   if (parsed.year) {
@@ -621,21 +641,37 @@ export async function searchSmart({ query, apiKey, taste, boosts }) {
     };
   });
 
+  const personById = new Map();
+  const addPersonCandidate = (person, alias = false) => {
+    if (!person?.id) return;
+    let entry = personById.get(person.id);
+    if (!entry) {
+      entry = { ...person, _aliases: [] };
+      personById.set(person.id, entry);
+    }
+    if (
+      alias &&
+      person.name &&
+      person.name !== entry.name &&
+      !entry._aliases.includes(person.name)
+    ) {
+      entry._aliases.push(person.name);
+    }
+  };
+  for (const person of people?.results || []) addPersonCandidate(person);
+  for (const person of data.peopleAliases?.results || []) {
+    addPersonCandidate(person, true);
+  }
+  for (const key of Object.keys(data)) {
+    if (!key.startsWith("tokenPeople") && key !== "prefixPeople") continue;
+    for (const person of data[key]?.results || []) addPersonCandidate(person);
+  }
+
   return {
     parsed,
     results,
     best: results[0] || null,
-    person: pickPerson(
-      [
-        ...(people?.results || []),
-        ...Object.keys(data)
-          .filter(
-            (key) => key.startsWith("tokenPeople") || key === "prefixPeople",
-          )
-          .flatMap((key) => data[key]?.results || []),
-      ],
-      parsed,
-    ),
+    person: pickPerson([...personById.values()], parsed),
   };
 }
 

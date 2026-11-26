@@ -128,7 +128,7 @@ function handle(channel, fn) {
       return { ok: false, reason: _unavailableReason || "unavailable" };
     }
     try {
-      return { ok: true, ...(fn(db, payload || {}) || {}) };
+      return { ok: true, ...fn(db, payload || {}) };
     } catch (error) {
       console.warn(`[search-db] ${channel} failed:`, error?.message || error);
       return { ok: false, reason: error?.message || "search-db-failed" };

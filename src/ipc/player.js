@@ -53,8 +53,12 @@ const streamMeta = new Map(); // url -> { referer, origin, userAgent }
 const STREAM_META_MAX = 50;
 // Header values end up in player command lines / config: strip control chars
 // (no header or option injection via CR/LF) and cap the length.
+const CONTROL_CHARS = new RegExp(
+  `[${String.fromCharCode(0)}-${String.fromCharCode(31)}${String.fromCharCode(127)}]`,
+  "g",
+);
 const cleanHeader = (v, max = 4096) =>
-  typeof v === "string" ? v.replace(/[\u0000-\u001f\u007f]/g, "").slice(0, max) : "";
+  typeof v === "string" ? v.replace(CONTROL_CHARS, "").slice(0, max) : "";
 
 function hasStreamMeta(url) {
   return streamMeta.has(url);
@@ -1111,6 +1115,42 @@ function register(getMainWindow, { writeSecretMigration }) {
           } catch {}
         }
         return { supported: false };
+      }
+
+      // Native text tracks expose writable cue times. Providers that render
+      // subtitles in their own DOM report unsupported, so the deck can reset
+      // the control instead of pretending the delay worked.
+      if (action === "subtitle-delay") {
+        const offset = Number(value);
+        const delay = Number.isFinite(offset)
+          ? Math.max(-10, Math.min(10, offset))
+          : 0;
+        const DELAY_JS = `(() => {
+          const videos = Array.from(document.querySelectorAll('video'));
+          videos.sort((a, b) => {
+            const area = (v) => Math.max(1, v.clientWidth || 0) * Math.max(1, v.clientHeight || 0);
+            return area(b) - area(a);
+          });
+          const v = videos[0];
+          if (!v || !v.textTracks) return { supported: false, cues: 0, delay: 0 };
+          let cues = 0;
+          for (const track of Array.from(v.textTracks)) {
+            if (!track.cues) continue;
+            for (const cue of Array.from(track.cues)) {
+              if (cue.__gigiStart == null) cue.__gigiStart = cue.startTime;
+              if (cue.__gigiEnd == null) cue.__gigiEnd = cue.endTime;
+              cue.startTime = Math.max(0, cue.__gigiStart + ${delay});
+              cue.endTime = Math.max(0, cue.__gigiEnd + ${delay});
+              cues += 1;
+            }
+          }
+          return { supported: cues > 0, cues, delay: ${delay} };
+        })()`;
+        try {
+          return await targetFrame.executeJavaScript(DELAY_JS, true);
+        } catch {
+          return { supported: false, cues: 0, delay: 0 };
+        }
       }
 
       const safeNumber = Number(value);

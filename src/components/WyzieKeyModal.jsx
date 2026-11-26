@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { secureStorage, STORAGE_KEYS } from "../utils/storage";
+import { translate as tr } from "../utils/i18n";
 
 export default function WyzieKeyModal({ onDone, onSkip }) {
   const [manualKey, setManualKey] = useState("");
@@ -114,10 +115,10 @@ export default function WyzieKeyModal({ onDone, onSkip }) {
             <div
               style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}
             >
-              Wyzie Subs requires an API key
+              {tr("wyzie.wyzieSubsRequiresAnApiKey")}
             </div>
             <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>
-              Free, no account required
+              {tr("wyzie.freeNoAccountRequired")}
             </div>
           </div>
         </div>
@@ -237,7 +238,7 @@ export default function WyzieKeyModal({ onDone, onSkip }) {
                   setErrorMsg("");
                 }}
               >
-                Back
+                {tr("wyzie.back")}
               </button>
               <button
                 className="btn btn-primary"
@@ -245,7 +246,7 @@ export default function WyzieKeyModal({ onDone, onSkip }) {
                 onClick={handleManualSubmit}
                 disabled={!manualKey.trim()}
               >
-                Confirm & validate
+                {tr("wyzie.confirmAndValidate")}
               </button>
             </div>
           </>
@@ -264,7 +265,7 @@ export default function WyzieKeyModal({ onDone, onSkip }) {
             <div
               style={{ color: "var(--text)", fontWeight: 600, marginBottom: 6 }}
             >
-              Complete the captcha in the popup window
+              {tr("wyzie.completeTheCaptchaInThePopupWindow")}
             </div>
             Please wait — key will be saved automatically…
           </div>
@@ -280,7 +281,7 @@ export default function WyzieKeyModal({ onDone, onSkip }) {
             }}
           >
             <div style={{ fontSize: 28, marginBottom: 12 }}>⏳</div>
-            Validating key…
+            {tr("wyzie.validatingKey")}
           </div>
         )}
 
@@ -295,7 +296,7 @@ export default function WyzieKeyModal({ onDone, onSkip }) {
             }}
           >
             <div style={{ fontSize: 28, marginBottom: 10 }}>✅</div>
-            API key saved! Loading subtitles…
+            {tr("wyzie.apiKeySavedLoadingSubtitles")}
           </div>
         )}
 
@@ -311,9 +312,9 @@ export default function WyzieKeyModal({ onDone, onSkip }) {
               }}
             >
               <div style={{ fontSize: 28, marginBottom: 10 }}>⏱️</div>
-              No key received within 10 seconds.
+              {tr("wyzie.noKeyReceivedWithin10Seconds")}
               <br />
-              The captcha may not have been completed, or the redirect failed.
+              {tr("wyzie.theCaptchaMayNotHaveBeenCompletedOrTheRedirectFa")}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               <button
@@ -321,7 +322,7 @@ export default function WyzieKeyModal({ onDone, onSkip }) {
                 style={{ width: "100%", padding: "9px 0", fontSize: 13 }}
                 onClick={handleRedeem}
               >
-                Try again
+                {tr("wyzie.tryAgain")}
               </button>
               <button
                 className="btn btn-ghost"
@@ -331,7 +332,7 @@ export default function WyzieKeyModal({ onDone, onSkip }) {
                   setErrorMsg("");
                 }}
               >
-                Enter key manually
+                {tr("wyzie.enterKeyManually")}
               </button>
               <button
                 className="btn btn-ghost"
@@ -343,7 +344,7 @@ export default function WyzieKeyModal({ onDone, onSkip }) {
                 }}
                 onClick={onSkip}
               >
-                Skip
+                {tr("wyzie.skip")}
               </button>
             </div>
           </>

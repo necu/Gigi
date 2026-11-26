@@ -71,8 +71,29 @@ const DEPARTMENT_LABELS = {
   Crew: "Crew",
 };
 
+const DEPARTMENT_KEYS = {
+  Acting: "acting",
+  Directing: "directing",
+  Writing: "writing",
+  Camera: "camera",
+  Sound: "sound",
+  Music: "music",
+  Production: "production",
+  Art: "art",
+  Editing: "editing",
+  "Costume & Make-Up": "costume",
+  "Visual Effects": "vfx",
+  Lighting: "lighting",
+  Crew: "crew",
+};
+
 export function departmentLabel(department) {
   return DEPARTMENT_LABELS[department] || department || "Film industry";
+}
+
+/** i18n suffix for a TMDB department, or null when we have no translation. */
+export function departmentKey(department) {
+  return DEPARTMENT_KEYS[department] || null;
 }
 
 function groupForJob(job) {
@@ -186,9 +207,10 @@ export function isKnownFor(credit) {
   return Boolean(credit?.poster_path && (credit.vote_count > 0 || credit.popularity > 0));
 }
 
-export function creditMeta(credit) {
+export function creditMeta(credit, typeLabel) {
   const year = creditYear(credit);
-  const type = credit?.media_type === "tv" ? "Series" : "Movie";
+  const type =
+    typeLabel || (credit?.media_type === "tv" ? "Series" : "Movie");
   return [year || null, type].filter(Boolean).join(" · ");
 }
 

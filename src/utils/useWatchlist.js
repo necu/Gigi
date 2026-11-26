@@ -76,13 +76,18 @@ export function useWatchlist() {
         // First run with SQLite: seed from the existing localStorage library.
         const imported = await watchlistDb.importState(local, { replace: false });
         if (cancelled) return;
-        if (imported?.ok) {
-          stateRef.current = local;
-          setState(local);
-          setStorageMode("sqlite");
+        if (!imported?.ok) {
+          // Never swap a non-empty local library for an empty database: keep
+          // working from localStorage until the next launch can seed it.
+          setStorageMode("local");
           setReady(true);
           return;
         }
+        stateRef.current = local;
+        setState(local);
+        setStorageMode("sqlite");
+        setReady(true);
+        return;
       }
 
       // Pick up favourites added by the stock app while this build was closed.

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { translate as tr } from "../utils/i18n";
 
 // ── Image component that proxies through Electron main process ────────────────
 // Fixes Codeberg (and other external) images being blocked by Electron's CSP.
@@ -510,9 +511,9 @@ export default function UpdateModal({
       appimage: "AppImage",
       deb: ".deb package",
       pacman: ".pacman (Arch)",
-      exe: "Windows installer",
+      exe: tr("updateModal.windowsInstaller"),
       dmg: "macOS installer (Universal)",
-    }[format] || "installer";
+    }[format] || tr("updateModal.installer");
 
   const busy = phase === "downloading" || phase === "installing";
 
@@ -580,7 +581,7 @@ export default function UpdateModal({
                     letterSpacing: 1,
                   }}
                 >
-                  UPDATE AVAILABLE
+                  {tr("updateModal.updateAvailable")}
                 </span>
               </div>
               <div
@@ -613,11 +614,11 @@ export default function UpdateModal({
                     textDecoration: "none",
                     cursor: "pointer",
                   }}
-                  title={`View on ${sourceLabel || "GitHub"}`}
+                  title={tr("updateModal.viewOn", { source: sourceLabel || "GitHub" })}
                 >
                   v{latest} ↗
                 </a>
-                is ready to install
+                {tr("updateModal.readyToInstall")}
                 {format && (
                   <span
                     style={{
@@ -672,7 +673,7 @@ export default function UpdateModal({
                   marginBottom: 12,
                 }}
               >
-                What's New
+                {tr("updateModal.whatSNew")}
               </div>
               <div>{renderChangelog(changelog)}</div>
             </>
@@ -684,7 +685,7 @@ export default function UpdateModal({
                 fontStyle: "italic",
               }}
             >
-              No changelog available.
+              {tr("updateModal.noChangelogAvailable")}
             </div>
           )}
         </div>
@@ -749,8 +750,8 @@ export default function UpdateModal({
                 <span>
                   {progressLabel ||
                     (phase === "downloading"
-                      ? "Downloading update…"
-                      : "Installing…")}
+                      ? tr("updateModal.downloading")
+                      : tr("updateModal.installing"))}
                 </span>
                 {phase === "downloading" && (
                   <span>{Math.round(progress)}%</span>
@@ -816,7 +817,7 @@ export default function UpdateModal({
           {/* Buttons */}
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
             <button className="btn btn-ghost" onClick={handleCancel}>
-              {phase === "downloading" ? "Cancel" : "Close"}
+              {phase === "downloading" ? tr("updateModal.cancel") : tr("updateModal.close")}
             </button>
             {phase === "idle" && (
               <>
@@ -857,7 +858,7 @@ export default function UpdateModal({
                     cursor: canInstall ? "pointer" : "not-allowed",
                   }}
                 >
-                  Install Update
+                  {tr("updateModal.installUpdate")}
                 </button>
               </>
             )}

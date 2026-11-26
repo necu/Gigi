@@ -11,10 +11,17 @@ import { imgUrl, tmdbFetch } from "../utils/api";
 import { getHomeLanguage } from "../utils/homeFeedCache";
 import { homeItemKey, isReleased } from "../utils/homeCurator";
 import { useT } from "../utils/i18n";
+import { storage } from "../utils/storage";
 
 const ROTATE_MS = 10000;
 const CACHE_TTL = 30 * 60 * 1000;
 const spotlightCache = new Map();
+
+const SPOTLIGHT_MODES = [
+  { id: "hidden", labelKey: "spotlight.mode.hidden" },
+  { id: "trending", labelKey: "spotlight.mode.trending" },
+  { id: "taste", labelKey: "spotlight.mode.taste" },
+];
 
 // Each part of the day gets a different kind of odd little film. The genres
 // are OR-ed in the discover query, so a title only needs to match one of them.
@@ -79,7 +86,7 @@ function recentSources(history, limit = 3) {
   return out;
 }
 
-function estimateTaste(items, excluded) {
+function estimateTaste(items, excluded, mode = "hidden") {
   const seen = new Set();
   const clean = [];
   for (const raw of items || []) {
@@ -96,9 +103,20 @@ function estimateTaste(items, excluded) {
     clean.push(item);
   }
 
-  // Worst rating first, then the least-known title. That is the whole point:
-  // genuinely obscure films, not just a low score with a huge audience.
   const ranked = clean.sort((a, b) => {
+    if (mode === "trending") {
+      return (
+        (Number(b.popularity) || 0) - (Number(a.popularity) || 0) ||
+        (Number(b.vote_count) || 0) - (Number(a.vote_count) || 0)
+      );
+    }
+    if (mode === "taste") {
+      return (
+        (Number(b.vote_average) || 0) - (Number(a.vote_average) || 0) ||
+        (Number(b.vote_count) || 0) - (Number(a.vote_count) || 0)
+      );
+    }
+    // Hidden gems: worst rating first, then the least-known title.
     const rating = (Number(a.vote_average) || 0) - (Number(b.vote_average) || 0);
     if (rating !== 0) return rating;
     return (Number(a.vote_count) || 0) - (Number(b.vote_count) || 0);
@@ -107,12 +125,46 @@ function estimateTaste(items, excluded) {
   const movies = ranked.filter((item) => item.media_type === "movie").slice(0, 8);
   const tv = ranked.filter((item) => item.media_type === "tv").slice(0, 8);
   return [...movies, ...tv]
-    .sort((a, b) => (Number(a.vote_average) || 0) - (Number(b.vote_average) || 0))
+    .sort((a, b) => {
+      if (mode === "trending") {
+        return (Number(b.popularity) || 0) - (Number(a.popularity) || 0);
+      }
+      if (mode === "taste") {
+        return (Number(b.vote_average) || 0) - (Number(a.vote_average) || 0);
+      }
+      return (Number(a.vote_average) || 0) - (Number(b.vote_average) || 0);
+    })
     .slice(0, 10);
 }
 
-function discoverUrl(type, genres) {
+function discoverUrl(type, genres, mode = "hidden") {
   const today = new Date().toISOString().slice(0, 10);
+  if (mode === "trending") {
+    const params = new URLSearchParams({
+      sort_by: "popularity.desc",
+      "vote_count.gte": "200",
+      "vote_average.gte": "5.5",
+      include_adult: "false",
+      page: "1",
+    });
+    if (genres.length > 0) params.set("with_genres", genres.join("|"));
+    if (type === "movie") params.set("primary_release_date.lte", today);
+    else params.set("first_air_date.lte", today);
+    return `/discover/${type}?${params.toString()}`;
+  }
+  if (mode === "taste") {
+    const params = new URLSearchParams({
+      sort_by: "vote_average.desc",
+      "vote_count.gte": "500",
+      "vote_average.gte": "7",
+      include_adult: "false",
+      page: "1",
+    });
+    if (genres.length > 0) params.set("with_genres", genres.join("|"));
+    if (type === "movie") params.set("primary_release_date.lte", today);
+    else params.set("first_air_date.lte", today);
+    return `/discover/${type}?${params.toString()}`;
+  }
   const params = new URLSearchParams({
     sort_by: "vote_average.asc",
     "vote_count.gte": "40",
@@ -128,16 +180,16 @@ function discoverUrl(type, genres) {
   return `/discover/${type}?${params.toString()}`;
 }
 
-async function fetchPool({ apiKey, genres, sources, excluded }) {
+async function fetchPool({ apiKey, genres, sources, excluded, mode = "hidden" }) {
   // Discover responses do not carry media_type, so each request remembers it.
   const requests = [
     {
       type: "movie",
-      promise: tmdbFetch(discoverUrl("movie", genres), apiKey),
+      promise: tmdbFetch(discoverUrl("movie", genres, mode), apiKey),
     },
     {
       type: "tv",
-      promise: tmdbFetch(discoverUrl("tv", genres), apiKey),
+      promise: tmdbFetch(discoverUrl("tv", genres, mode), apiKey),
     },
   ];
 
@@ -162,7 +214,7 @@ async function fetchPool({ apiKey, genres, sources, excluded }) {
       items.push({ ...item, media_type: type });
     }
   });
-  return estimateTaste(items, excluded);
+  return estimateTaste(items, excluded, mode);
 }
 
 /**
@@ -182,9 +234,18 @@ export default function HomeSpotlight({
 }) {
   const t = useT();
   const [mood, setMood] = useState(() => moodFor());
+  const [mode, setMode] = useState(
+    () => storage.get("spotlightMode") || "hidden",
+  );
   const [recentGenres, setRecentGenres] = useState([]);
   const [recentTitle, setRecentTitle] = useState("");
   const [items, setItems] = useState([]);
+  const [dismissed, setDismissed] = useState(
+    () => {
+      const saved = storage.get("spotlightDismissed");
+      return new Set(Array.isArray(saved) ? saved : []);
+    },
+  );
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
   const [showTrailer, setShowTrailer] = useState(false);
@@ -267,6 +328,7 @@ export default function HomeSpotlight({
       genreIds.join(","),
       recentSignature,
       historySignature,
+      mode,
     ].join("|");
     const cached = spotlightCache.get(cacheKey);
     if (cached && Date.now() - cached.at < CACHE_TTL) {
@@ -281,6 +343,7 @@ export default function HomeSpotlight({
         genres: genreIds.slice(0, 4),
         sources,
         excluded,
+        mode,
       });
       // A very specific taste + late hour can leave the basket empty. Retry
       // with the mood only, then with no genre filter at all.
@@ -290,6 +353,7 @@ export default function HomeSpotlight({
           genres: mood.genres,
           sources,
           excluded,
+          mode,
         });
       }
       if (next.length < 4) {
@@ -298,6 +362,7 @@ export default function HomeSpotlight({
           genres: [],
           sources,
           excluded,
+          mode,
         });
       }
       if (cancelled || !mountedRef.current) return;
@@ -323,11 +388,33 @@ export default function HomeSpotlight({
     recentGenres.join(","),
     recentSignature,
     historySignature,
+    mode,
   ]);
 
-  const list = items.length > 0 ? items : fallbackItem ? [fallbackItem] : [];
+  const visibleItems = useMemo(
+    () => items.filter((entry) => !dismissed.has(homeItemKey(entry))),
+    [dismissed, items],
+  );
+  const list =
+    visibleItems.length > 0
+      ? visibleItems
+      : items.length > 0
+        ? items
+        : fallbackItem
+          ? [fallbackItem]
+          : [];
   const item = list[Math.min(index, list.length - 1)] || null;
-  const usingFallback = items.length === 0 && !!fallbackItem;
+  const usingFallback = visibleItems.length === 0 && items.length === 0 && !!fallbackItem;
+
+  const dismissCurrent = () => {
+    if (!item || usingFallback) return;
+    const key = homeItemKey(item);
+    const next = new Set(dismissed);
+    next.add(key);
+    setDismissed(next);
+    storage.set("spotlightDismissed", [...next].slice(-100));
+    setIndex(0);
+  };
 
   useEffect(() => {
     if (items.length < 2 || paused || showTrailer) return undefined;
@@ -386,9 +473,15 @@ export default function HomeSpotlight({
   const moodLabel = t(mood.labelKey);
   const reason = usingFallback
     ? null
-    : recentTitle
-      ? t("spotlight.becauseWatched", { title: recentTitle })
-      : t("spotlight.becauseMood", { mood: moodLabel });
+    : mode === "trending"
+      ? null
+      : mode === "taste"
+        ? recentTitle
+          ? t("spotlight.becauseWatched", { title: recentTitle })
+          : t("spotlight.criteria.taste")
+        : recentTitle
+          ? t("spotlight.becauseWatched", { title: recentTitle })
+          : t("spotlight.becauseMood", { mood: moodLabel });
 
   const step = (delta) => {
     if (list.length < 2) return;
@@ -426,10 +519,27 @@ export default function HomeSpotlight({
             <>
               <span className="home-spotlight__sep">·</span>
               <span className="home-spotlight__badge">
-                {t("spotlight.worst")}
+                {t(`spotlight.badge.${mode}`)}
               </span>
             </>
           )}
+        </div>
+
+        <div className="home-spotlight__modes" role="group" aria-label={t("spotlight.mode")}>
+          {SPOTLIGHT_MODES.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              className={`home-spotlight__mode${mode === option.id ? " is-active" : ""}`}
+              onClick={() => {
+                setMode(option.id);
+                storage.set("spotlightMode", option.id);
+              }}
+              aria-pressed={mode === option.id}
+            >
+              {t(option.labelKey)}
+            </button>
+          ))}
         </div>
 
         <h1 className="home-spotlight__title">{title}</h1>
@@ -451,6 +561,11 @@ export default function HomeSpotlight({
 
         <p className="home-spotlight__overview">{item.overview}</p>
         {reason && <p className="home-spotlight__reason">{reason}</p>}
+        {!usingFallback && (
+          <p className="home-spotlight__criteria">
+            {t(`spotlight.criteria.${mode}`)}
+          </p>
+        )}
 
         <div className="home-spotlight__actions">
           <button
@@ -482,6 +597,15 @@ export default function HomeSpotlight({
             {saved ? <BookmarkFillIcon /> : <BookmarkIcon />}
             {saved ? t("spotlight.saved") : t("spotlight.save")}
           </button>
+          {!usingFallback && (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={dismissCurrent}
+            >
+              {t("spotlight.notInterested")}
+            </button>
+          )}
         </div>
       </div>
 

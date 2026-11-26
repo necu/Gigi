@@ -311,6 +311,11 @@ button.player-deck__time--total:hover {
   font-size: 13px;
 }
 
+.player-deck__icon-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
 .player-deck__tracks {
   font-size: 10px;
   font-weight: 800;
@@ -321,6 +326,11 @@ button.player-deck__time--total:hover {
   font-size: 10px;
   font-weight: 800;
   gap: 1px;
+}
+
+.player-deck__boost svg {
+  width: 12px;
+  height: 12px;
 }
 
 .player-deck__boost.is-active {
@@ -2729,4 +2739,215 @@ button.player-deck__time--total:hover {
 .vibe-tag-results__empty b {
   font-size: 13px;
   font-weight: 600;
+}
+
+/* ── Deck extras: next episode, retry, tracks and shortcuts ─────────────── */
+
+.player-deck__next {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 29px;
+  padding: 0 10px;
+  border: 1px solid rgba(229, 9, 20, 0.45);
+  border-radius: 999px;
+  background: rgba(229, 9, 20, 0.18);
+  color: #ffd9dc;
+  font: inherit;
+  font-size: 10.5px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.player-deck__next:hover {
+  background: rgba(229, 9, 20, 0.32);
+  color: #fff;
+}
+
+.player-deck__retry {
+  border-color: rgba(255, 193, 7, 0.4);
+  color: #ffd666;
+}
+
+.player-deck__tracks.is-active {
+  border-color: rgba(229, 9, 20, 0.55);
+  background: rgba(229, 9, 20, 0.22);
+  color: #fff;
+}
+
+.player-deck__tracks-menu {
+  position: absolute;
+  right: 14px;
+  bottom: calc(100% + 10px);
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  width: 268px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  background: rgba(16, 16, 20, 0.96);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(18px);
+}
+
+.player-deck__tracks-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 9px;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  font: inherit;
+  font-size: 11.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.player-deck__tracks-item:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.player-deck__tracks-item small {
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.player-deck__tracks-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 2px 0;
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 11px;
+}
+
+.player-deck__tracks-stepper {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.player-deck__tracks-stepper button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.07);
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.player-deck__tracks-stepper b {
+  min-width: 48px;
+  color: #fff;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.player-deck__tracks-reset {
+  align-self: flex-start;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.5);
+  font: inherit;
+  font-size: 10px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.player-deck__help {
+  position: absolute;
+  right: 16px;
+  bottom: calc(100% + 12px);
+  z-index: 14;
+  width: 300px;
+  padding: 13px 15px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 13px;
+  background: rgba(16, 16, 20, 0.97);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(18px);
+}
+
+.player-deck__help-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 9px;
+}
+
+.player-deck__help-head b {
+  color: #fff;
+  font-size: 12px;
+  letter-spacing: 0.3px;
+}
+
+.player-deck__help-head button {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.player-deck__help dl {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+}
+
+.player-deck__help dl > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.player-deck__help dt {
+  flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 10.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.player-deck__help dd {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 10.5px;
+  text-align: right;
+}
+
+@media (max-width: 760px) {
+  .player-deck__next {
+    display: none;
+  }
+
+  .player-deck__tracks-menu,
+  .player-deck__help {
+    right: 8px;
+    left: 8px;
+    width: auto;
+  }
 }

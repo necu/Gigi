@@ -45,9 +45,14 @@ import {
 import {
   APP_LANGUAGES,
   setAppLanguage,
+  translate,
   useAppLanguage,
   useT,
 } from "../utils/i18n";
+
+// Settings is made of many small components; a module-level helper keeps the
+// translation calls uniform without adding a hook to every one of them.
+const tr = (key, vars) => translate(key, vars);
 
 // ── Custom Select ─────────────────────────────────────────────────────────────
 function SettingsSelect({ value, onChange, options, style }) {
@@ -179,16 +184,16 @@ function SettingsSelect({ value, onChange, options, style }) {
 // ── Start page config ─────────────────────────────────────────────────────────
 
 // Age limit options: null = none, or specific ages
-const AGE_LIMIT_OPTIONS = [
-  { value: "", label: "No restriction" },
-  { value: "0", label: "0 — All audiences (G / FSK 0)" },
-  { value: "7", label: "7 — Family friendly (PG / FSK 6)" },
-  { value: "12", label: "12 — Teens and up" },
-  { value: "13", label: "13 — PG-13 and equivalent" },
-  { value: "15", label: "15 — Older teens" },
-  { value: "16", label: "16 — FSK 16 and equivalent" },
-  { value: "17", label: "17 — R / 17+ and equivalent" },
-  { value: "18", label: "18 — Adults only (NC-17 / FSK 18)" },
+const ageLimitOptions = () => [
+  { value: "", label: tr("settings.age.none") },
+  { value: "0", label: tr("settings.age.0") },
+  { value: "7", label: tr("settings.age.7") },
+  { value: "12", label: tr("settings.age.12") },
+  { value: "13", label: tr("settings.age.13") },
+  { value: "15", label: tr("settings.age.15") },
+  { value: "16", label: tr("settings.age.16") },
+  { value: "17", label: tr("settings.age.17") },
+  { value: "18", label: tr("settings.age.18") },
 ];
 
 // ── Confirmation Dialog ───────────────────────────────────────────────────────
@@ -242,7 +247,7 @@ function ResetConfirmDialog({ onConfirm, onCancel }) {
             marginBottom: 10,
           }}
         >
-          RESET GIGI?
+          {tr("settings.resetGigi")}
         </div>
         <div
           style={{
@@ -260,7 +265,7 @@ function ResetConfirmDialog({ onConfirm, onCancel }) {
           <br />
           <br />
           <span style={{ color: "var(--red)" }}>
-            This action cannot be undone.
+            {tr("settings.thisActionCannotBeUndone")}
           </span>
         </div>
 
@@ -270,7 +275,7 @@ function ResetConfirmDialog({ onConfirm, onCancel }) {
             style={{ flex: 1 }}
             onClick={onCancel}
           >
-            Cancel
+            {tr("settings.cancel")}
           </button>
           <button
             className="btn"
@@ -283,7 +288,7 @@ function ResetConfirmDialog({ onConfirm, onCancel }) {
             }}
             onClick={onConfirm}
           >
-            Yes, Reset Everything
+            {tr("settings.yesResetEverything")}
           </button>
         </div>
       </div>
@@ -360,7 +365,7 @@ function ConfirmDialog({
           <br />
           <br />
           <span style={{ color: "var(--red)" }}>
-            This action cannot be undone.
+            {tr("settings.thisActionCannotBeUndone")}
           </span>
         </div>
         <div style={{ display: "flex", gap: 12 }}>
@@ -369,7 +374,7 @@ function ConfirmDialog({
             style={{ flex: 1 }}
             onClick={onCancel}
           >
-            Cancel
+            {tr("settings.cancel")}
           </button>
           <button
             className="btn"
@@ -539,7 +544,7 @@ function CleanRow({
               : { opacity: busy ? 0.5 : 1 }
           }
         >
-          {busy ? "Working…" : buttonLabel}
+          {busy ? tr("settings.working") : buttonLabel}
         </button>
       </div>
     </div>
@@ -668,7 +673,7 @@ function VersionSection() {
 
   return (
     <div style={{ marginBottom: 40 }}>
-      <div className="settings-section-title">App Version</div>
+      <div className="settings-section-title">{tr("settings.appVersion")}</div>
 
       {/* Version row */}
       <div
@@ -682,7 +687,7 @@ function VersionSection() {
       >
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ fontSize: 13, color: "var(--text3)" }}>
-            Current version
+            {tr("settings.currentVersion")}
           </span>
           <code
             style={{
@@ -705,7 +710,7 @@ function VersionSection() {
           onClick={runCheck}
           style={{ opacity: checking ? 0.6 : 1 }}
         >
-          {checking ? "Checking…" : "Check for Updates"}
+          {checking ? tr("settings.checking") : tr("settings.checkUpdates")}
         </button>
 
         {/* Update source toggle */}
@@ -763,7 +768,7 @@ function VersionSection() {
               (e.currentTarget.style.background = "rgba(229,9,20,0.12)")
             }
           >
-            🎉 v{result.latest} available. Install Update
+            🎉 v{result.latest} {tr("settings.updateAvailable")}
           </button>
         )}
 
@@ -776,7 +781,7 @@ function VersionSection() {
 
         {result && !result.error && !result.hasUpdate && (
           <span style={{ fontSize: 13, color: "#48c774", fontWeight: 500 }}>
-            ✓ You're up to date
+            {tr("settings.upToDate")}
           </span>
         )}
 
@@ -810,15 +815,14 @@ function VersionSection() {
         />
         <div>
           <div style={{ fontSize: 14, fontWeight: 500, color: "var(--text)" }}>
-            Check for updates on startup
+            {tr("settings.checkForUpdatesOnStartup")}
           </div>
           <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>
-            Shows a notification banner if a new version is available. Turned on
-            by default.
+            {tr("settings.autoCheckDesc")}
           </div>
         </div>
         {autoSaved && (
-          <span style={{ fontSize: 12, color: "#48c774" }}>✓ Saved</span>
+          <span style={{ fontSize: 12, color: "#48c774" }}>✓ {tr("settings.saved")}</span>
         )}
       </div>
     </div>
@@ -871,7 +875,7 @@ function HomeLayoutSection() {
 
   return (
     <div style={{ marginBottom: 40 }}>
-      <div className="settings-section-title">Home Page Layout</div>
+      <div className="settings-section-title">{tr("settings.homePageLayout")}</div>
       <div
         style={{
           fontSize: 13,
@@ -880,8 +884,7 @@ function HomeLayoutSection() {
           lineHeight: 1.6,
         }}
       >
-        Choose which rows appear on the Home page and drag to reorder them. The
-        hero banner is always shown at the top.
+        {tr("settings.homeLayoutDesc")}
       </div>
 
       {/* ── View mode selector ── */}
@@ -896,19 +899,19 @@ function HomeLayoutSection() {
             letterSpacing: "0.05em",
           }}
         >
-          Row display style
+          {tr("settings.rowDisplayStyle")}
         </div>
         <div style={{ display: "flex", gap: 10 }}>
           {[
             {
               value: "carousel",
-              label: "Carousel",
-              desc: "Scrollable spotlight with featured poster",
+              label: tr("settings.view.carousel"),
+              desc: tr("settings.view.carouselDesc"),
             },
             {
               value: "list",
-              label: "⊞ Grid",
-              desc: "Compact grid of all items",
+              label: tr("settings.view.list"),
+              desc: tr("settings.view.listDesc"),
             },
           ].map(({ value, label, desc }) => (
             <button
@@ -992,14 +995,14 @@ function HomeLayoutSection() {
                 color: "var(--text)",
               }}
             >
-              {rowLabels[id] || id}
+              {tr(`homeRow.${id}`) || rowLabels[id] || id}
             </span>
 
             {/* Toggle */}
             <Toggle
               value={visible[id]}
               onChange={() => toggleVisible(id)}
-              title={visible[id] ? "Hide row" : "Show row"}
+              title={visible[id] ? tr("settings.hideRow") : tr("settings.showRow")}
             />
           </div>
         ))}
@@ -1014,10 +1017,10 @@ function HomeLayoutSection() {
         }}
       >
         <button className="btn btn-primary" onClick={handleSave}>
-          Save Layout
+          {tr("settings.saveLayout")}
         </button>
         {saved && (
-          <span style={{ fontSize: 13, color: "#48c774" }}>✓ Saved</span>
+          <span style={{ fontSize: 13, color: "#48c774" }}>✓ {tr("settings.saved")}</span>
         )}
       </div>
     </div>
@@ -1025,11 +1028,11 @@ function HomeLayoutSection() {
 }
 
 // ── Scheduled Backup Section ──────────────────────────────────────────────────
-const FREQUENCY_OPTIONS = [
-  { value: "startup", label: "On App Start" },
-  { value: "daily", label: "Daily" },
-  { value: "weekly", label: "Weekly" },
-  { value: "monthly", label: "Monthly" },
+const frequencyOptions = () => [
+  { value: "startup", label: tr("settings.freq.startup") },
+  { value: "daily", label: tr("settings.freq.daily") },
+  { value: "weekly", label: tr("settings.freq.weekly") },
+  { value: "monthly", label: tr("settings.freq.monthly") },
 ];
 
 function ScheduledBackupSection() {
@@ -1103,10 +1106,10 @@ function ScheduledBackupSection() {
         <Toggle value={enabled} onChange={setEnabled} />
         <div>
           <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)" }}>
-            Scheduled Backups
+            {tr("settings.scheduledBackups")}
           </div>
           <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>
-            Automatically save a backup file on a schedule
+            {tr("settings.automaticallySaveABackupFileOnASchedule")}
           </div>
         </div>
       </div>
@@ -1123,7 +1126,7 @@ function ScheduledBackupSection() {
                 marginBottom: 6,
               }}
             >
-              Backup Folder
+              {tr("settings.backupFolder")}
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <input
@@ -1138,7 +1141,7 @@ function ScheduledBackupSection() {
                 style={{ padding: "7px 14px", fontSize: 13 }}
                 onClick={pickFolder}
               >
-                Browse…
+                {tr("settings.browse")}
               </button>
             </div>
           </div>
@@ -1161,12 +1164,12 @@ function ScheduledBackupSection() {
                   marginBottom: 6,
                 }}
               >
-                Frequency
+                {tr("settings.frequency")}
               </div>
               <SettingsSelect
                 value={frequency}
                 onChange={(v) => setFrequency(v)}
-                options={FREQUENCY_OPTIONS}
+                options={frequencyOptions()}
                 style={{ width: "100%" }}
               />
             </div>
@@ -1180,7 +1183,7 @@ function ScheduledBackupSection() {
                   marginBottom: 6,
                 }}
               >
-                Keep Last N Backups
+                {tr("settings.keepLastNBackups")}
               </div>
               <input
                 type="number"
@@ -1196,10 +1199,10 @@ function ScheduledBackupSection() {
 
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <button className="btn btn-primary" onClick={handleSave}>
-              Save
+              {tr("settings.save")}
             </button>
             {saved && (
-              <span style={{ fontSize: 13, color: "#48c774" }}>✓ Saved</span>
+              <span style={{ fontSize: 13, color: "#48c774" }}>✓ {tr("settings.saved")}</span>
             )}
           </div>
         </>
@@ -1302,7 +1305,7 @@ function LibraryMaintenanceSection() {
 
   return (
     <div style={{ marginBottom: 40 }}>
-      <div className="settings-section-title">Library Database</div>
+      <div className="settings-section-title">{tr("settings.libraryDatabase")}</div>
       <div
         style={{
           fontSize: 13,
@@ -1311,18 +1314,17 @@ function LibraryMaintenanceSection() {
           lineHeight: 1.6,
         }}
       >
-        Check the SQLite library, compact its write-ahead log and remove unused
-        tags and collections. Backups include this database as well.
+        {tr("settings.databaseDesc")}
       </div>
 
       {stats?.available ? (
         <>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
-            {stat("Titles", stats.entries)}
-            {stat("Tags", stats.tags)}
-            {stat("Collections", stats.collections)}
-            {stat("Playlists", playlistCount ?? "—")}
-            {stat("On disk", formatBytes(stats.sizeBytes || 0))}
+            {stat(tr("settings.stats.titles"), stats.entries)}
+            {stat(tr("settings.stats.tags"), stats.tags)}
+            {stat(tr("settings.stats.collections"), stats.collections)}
+            {stat(tr("settings.stats.playlists"), playlistCount ?? "—")}
+            {stat(tr("settings.stats.onDisk"), formatBytes(stats.sizeBytes || 0))}
           </div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <button
@@ -1330,13 +1332,13 @@ function LibraryMaintenanceSection() {
               onClick={checkIntegrity}
               disabled={busy}
             >
-              Check integrity
+              {tr("settings.checkIntegrity")}
             </button>
             <button className="btn btn-ghost" onClick={optimize} disabled={busy}>
-              Optimize
+              {tr("settings.optimize")}
             </button>
             <button className="btn btn-ghost" onClick={cleanUp} disabled={busy}>
-              Clean unused tags
+              {tr("settings.cleanUnusedTags")}
             </button>
           </div>
           {stats.path && (
@@ -1363,8 +1365,7 @@ function LibraryMaintenanceSection() {
             fontSize: 13,
           }}
         >
-          The SQLite library is unavailable; Gigi is using its localStorage
-          fallback.
+          {tr("settings.sqliteFallback")}
         </div>
       )}
 
@@ -1444,7 +1445,7 @@ function BackupRestoreSection({ onRestored }) {
 
   return (
     <div style={{ marginBottom: 40 }}>
-      <div className="settings-section-title">Backup &amp; Restore</div>
+      <div className="settings-section-title">{tr("settings.backupAndRestore")}</div>
       <div
         style={{
           fontSize: 13,
@@ -1453,9 +1454,7 @@ function BackupRestoreSection({ onRestored }) {
           lineHeight: 1.6,
         }}
       >
-        Export your settings, watchlist, watch history, SQLite library and
-        playlists to a JSON file. Import it later to restore everything, useful
-        before reinstalling or switching devices. Older v1 backups still work.
+        {tr("settings.backupDesc")}
       </div>
       <div
         style={{
@@ -1470,7 +1469,7 @@ function BackupRestoreSection({ onRestored }) {
           onClick={handleExport}
           disabled={busy}
         >
-          {busy ? "Working…" : "⬆ Export Backup"}
+          {busy ? tr("settings.working") : `⬆ ${tr("settings.exportBackup")}`}
         </button>
         <label
           aria-disabled={busy}
@@ -1496,7 +1495,7 @@ function BackupRestoreSection({ onRestored }) {
             (e.currentTarget.style.background = "var(--surface2)")
           }
         >
-          ⬇ Import Backup
+          ⬇ {tr("settings.importBackup")}
           <input
             type="file"
             accept=".json,application/json"
@@ -1652,7 +1651,7 @@ function AppearanceSection() {
             <button
               key={t.id}
               onClick={() => handleThemeSelect(t.id)}
-              title={t.description}
+              title={tr(`settings.themeDesc.${t.id}`)}
               style={{
                 display: "flex",
                 flexDirection: "column",
@@ -1703,7 +1702,7 @@ function AppearanceSection() {
           ))}
         </div>
         <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 8 }}>
-          {THEME_PRESETS.find((t) => t.id === theme)?.description}
+          {tr(`settings.themeDesc.${theme}`)}
         </div>
       </div>
 
@@ -1985,15 +1984,15 @@ function LibraryPrivacySection() {
   };
 
   const SORT_OPTIONS = [
-    { value: "manual", label: "Custom order" },
-    { value: "title", label: "Title A-Z" },
-    { value: "rating", label: "Top rated" },
-    { value: "year", label: "Newest first" },
+    { value: "manual", label: tr("settings.sort.custom") },
+    { value: "title", label: tr("settings.sort.title") },
+    { value: "rating", label: tr("settings.sort.topRated") },
+    { value: "year", label: tr("settings.sort.newest") },
   ];
 
   return (
     <div style={{ marginBottom: 40 }}>
-      <div className="settings-section-title">Library & Privacy</div>
+      <div className="settings-section-title">{tr("settings.libraryAndPrivacy")}</div>
 
       {/* Watchlist Sort */}
       <div style={{ marginBottom: 24 }}>
@@ -2005,7 +2004,7 @@ function LibraryPrivacySection() {
             marginBottom: 8,
           }}
         >
-          Watchlist sort order
+          {tr("settings.watchlistSortOrder")}
         </div>
         <div
           style={{
@@ -2015,8 +2014,7 @@ function LibraryPrivacySection() {
             lineHeight: 1.6,
           }}
         >
-          How titles in your watchlist are sorted. "Custom order" keeps your
-          drag-and-drop arrangement.
+          {tr("settings.librarySortDesc")}
         </div>
         <SettingsSelect
           value={sort}
@@ -2033,11 +2031,10 @@ function LibraryPrivacySection() {
             <div
               style={{ fontSize: 14, fontWeight: 500, color: "var(--text)" }}
             >
-              Record watch history
+              {tr("settings.recordWatchHistory")}
             </div>
             <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>
-              When off, nothing you watch will be added to history or "Continue
-              Watching".
+              {tr("settings.historyDesc")}
             </div>
           </div>
         </div>
@@ -2061,10 +2058,10 @@ function LibraryPrivacySection() {
 
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <button className="btn btn-primary" onClick={handleSave}>
-          Save
+          {tr("settings.save")}
         </button>
         {saved && (
-          <span style={{ fontSize: 13, color: "#48c774" }}>✓ Saved</span>
+          <span style={{ fontSize: 13, color: "#48c774" }}>✓ {tr("settings.saved")}</span>
         )}
       </div>
     </div>
@@ -2085,7 +2082,7 @@ function StartPageSection() {
 
   return (
     <div style={{ marginBottom: 40 }}>
-      <div className="settings-section-title">Start Page</div>
+      <div className="settings-section-title">{tr("settings.startPage")}</div>
       <div
         style={{
           fontSize: 13,
@@ -2094,7 +2091,7 @@ function StartPageSection() {
           lineHeight: 1.6,
         }}
       >
-        Choose which page opens when you launch Gigi.
+        {tr("settings.chooseWhichPageOpensWhenYouLaunchGigi")}
       </div>
       <div
         style={{
@@ -2108,16 +2105,16 @@ function StartPageSection() {
           value={startPage}
           onChange={(v) => setStartPage(v)}
           options={[
-            { value: "home", label: "🏠  Home" },
-            { value: "history", label: "🕐  Library / History" },
-            { value: "downloads", label: "⬇  Downloads" },
+            { value: "home", label: tr("settings.start.home") },
+            { value: "history", label: tr("settings.start.history") },
+            { value: "downloads", label: tr("settings.start.downloads") },
           ]}
         />
         <button className="btn btn-primary" onClick={handleSave}>
-          Save
+          {tr("settings.save")}
         </button>
         {saved && (
-          <span style={{ fontSize: 13, color: "#48c774" }}>✓ Saved</span>
+          <span style={{ fontSize: 13, color: "#48c774" }}>✓ {tr("settings.saved")}</span>
         )}
       </div>
     </div>
@@ -2164,7 +2161,7 @@ function TmdbLanguageSection() {
 
   return (
     <div style={{ marginBottom: 40 }}>
-      <div className="settings-section-title">Metadata Language</div>
+      <div className="settings-section-title">{tr("settings.metadataLanguage")}</div>
       <div
         style={{
           fontSize: 13,
@@ -2173,9 +2170,7 @@ function TmdbLanguageSection() {
           lineHeight: 1.6,
         }}
       >
-        Language used when fetching titles, descriptions, and other metadata
-        from TMDB. Changing this clears the metadata cache so updated content
-        loads immediately.
+        {tr("settings.metadataDesc")}
       </div>
       <div
         style={{
@@ -2191,11 +2186,11 @@ function TmdbLanguageSection() {
           options={TMDB_LANGUAGES}
         />
         <button className="btn btn-primary" onClick={handleSave}>
-          Save
+          {tr("settings.save")}
         </button>
         {saved && (
           <span style={{ fontSize: 13, color: "#48c774" }}>
-            ✓ Saved, cache cleared
+            {tr("settings.savedCacheCleared")}
           </span>
         )}
       </div>
@@ -2218,7 +2213,6 @@ function SubtitleSettingsSection() {
   const [wyzieApiKey, setWyzieApiKey] = useState("");
   const [showWyzieKey, setShowWyzieKey] = useState(false);
   const [wyzieCopied, setWyzieCopied] = useState(false);
-  const [wyzieClearConfirm, setWyzieClearConfirm] = useState(false);
   const [saved, setSaved] = useState(false);
 
   // Load keys from secure storage
@@ -2254,7 +2248,7 @@ function SubtitleSettingsSection() {
 
   return (
     <div style={{ marginBottom: 40 }}>
-      <div className="settings-section-title">Subtitle Downloads</div>
+      <div className="settings-section-title">{tr("settings.subtitleDownloads")}</div>
 
       {/* Source info */}
       <div
@@ -2268,8 +2262,7 @@ function SubtitleSettingsSection() {
         <span style={{ color: "var(--text)", fontWeight: 600 }}>
           Wyzie Subs
         </span>{" "}
-        is used by default and requires a free API key (no account needed).
-        Optionally add a{" "}
+        {tr("settings.subsSourceA")}{" "}
         <span
           style={{
             color: "var(--red)",
@@ -2280,9 +2273,9 @@ function SubtitleSettingsSection() {
             window.electron?.openExternal("https://subdl.com/settings")
           }
         >
-          SubDL API key
+          {tr("settings.subdlApiKey")}
         </span>{" "}
-        (free), to use SubDL as the primary source instead.
+        {tr("settings.subsSourceB")}
         {hasSubdlKey && (
           <span
             style={{
@@ -2297,7 +2290,7 @@ function SubtitleSettingsSection() {
               border: "1px solid rgba(99,149,255,0.3)",
             }}
           >
-            SubDL ACTIVE
+            {tr("settings.subdlActive")}
           </span>
         )}
       </div>
@@ -2319,7 +2312,7 @@ function SubtitleSettingsSection() {
           }}
         >
           {enabled
-            ? "Auto-download subtitles when downloading videos"
+            ? tr("settings.autoDownloadSubs")
             : "Subtitle download disabled"}
         </span>
       </div>
@@ -2331,7 +2324,7 @@ function SubtitleSettingsSection() {
             <div
               style={{ fontSize: 12, color: "var(--text3)", marginBottom: 6 }}
             >
-              Default language
+              {tr("settings.defaultLanguage")}
             </div>
             <SettingsSelect
               value={lang}
@@ -2343,7 +2336,7 @@ function SubtitleSettingsSection() {
             />
           </div>
 
-          {/* Wyzie API key */}
+          {/* {tr("settings.wyzieApiKey")} */}
           <div style={{ marginBottom: 20 }}>
             <div
               style={{ fontSize: 12, color: "var(--text3)", marginBottom: 6 }}
@@ -2374,7 +2367,7 @@ function SubtitleSettingsSection() {
                 lineHeight: 1.5,
               }}
             >
-              Required for Wyzie Subs. Get a free key by following the tutorial.{" "}
+              {tr("settings.wyzieRequired")}{" "}
               <button
                 className="btn btn-ghost"
                 style={{
@@ -2392,7 +2385,7 @@ function SubtitleSettingsSection() {
                   )
                 }
               >
-                How to get a key ↗
+                {tr("settings.howToGetKey")}
               </button>
             </div>
             <div
@@ -2423,7 +2416,7 @@ function SubtitleSettingsSection() {
                   className="btn btn-ghost"
                   style={{ padding: "6px 12px", fontSize: 12 }}
                   onClick={handleWyzieCopy}
-                  title="Copy key"
+                  title={tr("settings.copyKey")}
                 >
                   {wyzieCopied ? "Copied!" : "Copy"}
                 </button>
@@ -2437,7 +2430,7 @@ function SubtitleSettingsSection() {
                       `https://store.wyzie.io/dashboard?key=${wyzieApiKey.trim()}`,
                     )
                   }
-                  title="Open your wyzie dashboard"
+                  title={tr("settings.openYourWyzieDashboard")}
                 >
                   Dashboard ↗
                 </button>
@@ -2445,7 +2438,7 @@ function SubtitleSettingsSection() {
             </div>
           </div>
 
-          {/* SubDL API key */}
+          {/* {tr("settings.subdlApiKey")} */}
           <div style={{ marginBottom: 8 }}>
             <div
               style={{ fontSize: 12, color: "var(--text3)", marginBottom: 6 }}
@@ -2461,7 +2454,7 @@ function SubtitleSettingsSection() {
                   window.electron?.openExternal("https://subdl.com/settings")
                 }
               >
-                (free, register at subdl.com ↗)
+                {tr("settings.subdlOptionalHint")}
               </span>
               <span
                 style={{
@@ -2475,7 +2468,7 @@ function SubtitleSettingsSection() {
                   border: "1px solid rgba(99,202,183,0.25)",
                 }}
               >
-                OPTIONAL
+                {tr("settings.optional")}
               </span>
             </div>
             <div
@@ -2486,17 +2479,16 @@ function SubtitleSettingsSection() {
                 lineHeight: 1.5,
               }}
             >
-              Leave empty to use{" "}
+              {tr("settings.leaveEmptyToUse")}{" "}
               <strong style={{ color: "var(--text)" }}>Wyzie Subs</strong>{" "}
-              (default, requires Wyzie API key above). Add a SubDL key to switch
-              to SubDL as the primary source.
+              {tr("settings.subdlHint")}
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <input
                 className="apikey-input"
                 style={{ flex: 1, maxWidth: 400, marginBottom: 0 }}
                 type={showSubdlKey ? "text" : "password"}
-                placeholder="SubDL API key, leave empty to use Wyzie"
+                placeholder={tr("settings.subdlApiKeyLeaveEmptyToUseWyzie")}
                 value={subdlApiKey}
                 onChange={(e) => setSubdlApiKey(e.target.value)}
               />
@@ -2516,9 +2508,9 @@ function SubtitleSettingsSection() {
                     color: "var(--text3)",
                   }}
                   onClick={() => setSubdlApiKey("")}
-                  title="Clear key (revert to Wyzie)"
+                  title={tr("settings.clearKeyRevertToWyzie")}
                 >
-                  Clear
+                  {tr("settings.clear")}
                 </button>
               )}
             </div>
@@ -2530,10 +2522,10 @@ function SubtitleSettingsSection() {
         style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 8 }}
       >
         <button className="btn btn-primary" onClick={handleSave}>
-          Save
+          {tr("settings.save")}
         </button>
         {saved && (
-          <span style={{ fontSize: 13, color: "#4caf50" }}>✓ Saved</span>
+          <span style={{ fontSize: 13, color: "#4caf50" }}>✓ {tr("settings.saved")}</span>
         )}
       </div>
     </div>
@@ -2589,7 +2581,7 @@ function NotificationsSection() {
 
   return (
     <div style={{ marginBottom: 40 }}>
-      <div className="settings-section-title">Desktop Notifications</div>
+      <div className="settings-section-title">{tr("settings.desktopNotifications")}</div>
       <div
         style={{
           fontSize: 13,
@@ -2598,7 +2590,7 @@ function NotificationsSection() {
           lineHeight: 1.6,
         }}
       >
-        Control which events trigger a desktop notification.
+        {tr("settings.controlWhichEventsTriggerADesktopNotification")}
       </div>
 
       <div
@@ -2611,14 +2603,14 @@ function NotificationsSection() {
         }}
       >
         <ToggleRow
-          label="Notify when a download completes"
-          description="Shows a desktop notification when an item finishes downloading."
+          label={tr("settings.notifyWhenADownloadCompletes")}
+          description={tr("settings.showsADesktopNotificationWhenAnItemFinishesDownloadi")}
           value={notifyDownload}
           onChange={setNotifyDownload}
         />
         <ToggleRow
-          label="Notify about new episodes on startup"
-          description="On startup, checks every TV series you have saved for newly released episodes and notifies you if any aired since the last check."
+          label={tr("settings.notifyAboutNewEpisodesOnStartup")}
+          description={tr("settings.onStartupChecksEveryTvSeriesYouHaveSavedForNewlyRele")}
           value={notifyEpisode}
           onChange={setNotifyEpisode}
         />
@@ -2626,10 +2618,10 @@ function NotificationsSection() {
 
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <button className="btn btn-primary" onClick={saveSettings}>
-          Save
+          {tr("settings.save")}
         </button>
         {saved && (
-          <span style={{ fontSize: 13, color: "#48c774" }}>✓ Saved</span>
+          <span style={{ fontSize: 13, color: "#48c774" }}>✓ {tr("settings.saved")}</span>
         )}
       </div>
     </div>
@@ -2697,7 +2689,7 @@ function DiscordRpcSection() {
 
   return (
     <div style={{ marginBottom: 40 }}>
-      <div className="settings-section-title">Discord Rich Presence</div>
+      <div className="settings-section-title">{tr("settings.discordRichPresence")}</div>
       <div
         style={{
           fontSize: 13,
@@ -2706,9 +2698,7 @@ function DiscordRpcSection() {
           lineHeight: 1.6,
         }}
       >
-        Shows what you're currently watching on your Discord profile (title +
-        cover, or "Idling" when nothing is open). Off by default. Requires
-        the Discord desktop client to be running.
+        {tr("settings.discordDesc")}
       </div>
 
       <div
@@ -2721,28 +2711,28 @@ function DiscordRpcSection() {
         }}
       >
         <ToggleRow
-          label="Enable Discord Rich Presence"
-          description="Connects to your local Discord client and updates your status automatically."
+          label={tr("settings.enableDiscordRichPresence")}
+          description={tr("settings.connectsToYourLocalDiscordClientAndUpdatesYourStatus")}
           value={enabled}
           onChange={setEnabledState}
         />
         <ToggleRow
-          label="Show cover art"
-          description="Uses the movie/show poster as the large image. When off, only the Gigi icon is shown."
+          label={tr("settings.showCoverArt")}
+          description={tr("settings.usesTheMovieShowPosterAsTheLargeImageWhenOffOnlyTheG")}
           value={showCover}
           onChange={setShowCover}
           disabled={!enabled}
         />
         <ToggleRow
-          label="Show elapsed time"
-          description="Displays how long you've been on the current title's page."
+          label={tr("settings.showElapsedTime")}
+          description={tr("settings.displaysHowLongYouVeBeenOnTheCurrentTitleSPage")}
           value={showTimestamp}
           onChange={setShowTimestamp}
           disabled={!enabled}
         />
         <ToggleRow
-          label="Show GitHub button"
-          description="Adds a button linking to the Gigi GitHub repository."
+          label={tr("settings.showGithubButton")}
+          description={tr("settings.addsAButtonLinkingToTheGigiGithubRepository")}
           value={showButton}
           onChange={setShowButton}
           disabled={!enabled}
@@ -2751,10 +2741,10 @@ function DiscordRpcSection() {
 
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <button className="btn btn-primary" onClick={saveSettings}>
-          Save
+          {tr("settings.save")}
         </button>
         {saved && (
-          <span style={{ fontSize: 13, color: "#48c774" }}>✓ Saved</span>
+          <span style={{ fontSize: 13, color: "#48c774" }}>✓ {tr("settings.saved")}</span>
         )}
       </div>
     </div>
@@ -3032,7 +3022,7 @@ function SettingsTopBar({ sectionRefs, contentRef }) {
       try {
         const el = range.startContainer.parentElement;
         if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-      } catch (_) {}
+      } catch {}
     });
   };
 
@@ -3312,7 +3302,7 @@ function SettingsTopBar({ sectionRefs, contentRef }) {
               {matchCount > 0 && (
                 <button
                   onClick={goPrev}
-                  title="Previous match (Shift+Enter)"
+                  title={tr("settings.previousMatchShiftEnter")}
                   style={navBtnStyle}
                   onMouseEnter={(e) =>
                     (e.currentTarget.style.background =
@@ -3341,7 +3331,7 @@ function SettingsTopBar({ sectionRefs, contentRef }) {
               {matchCount > 0 && (
                 <button
                   onClick={goNext}
-                  title="Next match (Enter)"
+                  title={tr("settings.nextMatchEnter")}
                   style={navBtnStyle}
                   onMouseEnter={(e) =>
                     (e.currentTarget.style.background =
@@ -3374,7 +3364,7 @@ function SettingsTopBar({ sectionRefs, contentRef }) {
                     clearHighlights();
                     inputRef.current?.focus();
                   }}
-                  title="Clear search"
+                  title={tr("settings.clearSearch")}
                   style={{ ...navBtnStyle, color: "var(--text3)" }}
                   onMouseEnter={(e) =>
                     (e.currentTarget.style.background =
@@ -3402,7 +3392,7 @@ function SettingsTopBar({ sectionRefs, contentRef }) {
               {/* Esc button */}
               <button
                 onClick={closeSearch}
-                title="Close (Esc)"
+                title={tr("settings.closeEsc")}
                 style={{
                   background: "none",
                   border: "none",
@@ -3416,7 +3406,7 @@ function SettingsTopBar({ sectionRefs, contentRef }) {
                   letterSpacing: 0.3,
                 }}
               >
-                Esc
+                {tr("settings.esc")}
               </button>
             </div>
           ) : (
@@ -3456,7 +3446,7 @@ function SettingsTopBar({ sectionRefs, contentRef }) {
                 <circle cx="11" cy="11" r="8" />
                 <line x1="21" y1="21" x2="16.65" y2="16.65" />
               </svg>
-              Search settings…
+              {tr("settings.searchSettings")}
               <span
                 style={{
                   fontSize: 10,
@@ -3735,7 +3725,7 @@ export default function SettingsPage({
           msg: `Server responded with status ${res.status}.`,
         });
       }
-    } catch (e) {
+    } catch {
       setInvidiousStatus({
         ok: false,
         msg: "Could not reach instance. Check the URL or try another.",
@@ -3851,8 +3841,8 @@ export default function SettingsPage({
     <>
       {showProgressConfirm && (
         <ConfirmDialog
-          title="CLEAR WATCH PROGRESS?"
-          description="This will permanently delete all watch history, continue-watching progress, and watched/completed markings for all movies and series."
+          title={tr("settings.clearWatchProgressConfirm")}
+          description={tr("settings.thisWillPermanentlyDeleteAllWatchHistoryContinueWatc")}
           confirmLabel="Yes, Clear Everything"
           onConfirm={async () => {
             setShowProgressConfirm(false);
@@ -3869,9 +3859,9 @@ export default function SettingsPage({
       )}
       {showDeleteDlConfirm && (
         <ConfirmDialog
-          title="DELETE ALL DOWNLOADS?"
-          description="This will permanently delete all video files downloaded through Gigi and remove them from the download list."
-          confirmLabel="Yes, Delete All"
+          title={tr("settings.deleteAllDownloadsConfirm")}
+          description={tr("settings.thisWillPermanentlyDeleteAllVideoFilesDownloadedThro")}
+          confirmLabel={tr("settings.yesDeleteAll")}
           onConfirm={async () => {
             setShowDeleteDlConfirm(false);
             const result = await handleDeleteAllDownloads();
@@ -3936,7 +3926,7 @@ export default function SettingsPage({
 
           {/* TMDB API Token */}
           <div style={{ marginBottom: 40 }}>
-            <div className="settings-section-title">TMDB Read Access Token</div>
+            <div className="settings-section-title">{tr("settings.tmdbReadAccessToken")}</div>
             <div
               style={{
                 fontSize: 13,
@@ -3945,8 +3935,7 @@ export default function SettingsPage({
                 lineHeight: 1.6,
               }}
             >
-              Used to fetch movie and TV metadata, posters, ratings, and cast
-              info from The Movie Database.
+              {tr("settings.tmdbTokenDesc")}
             </div>
             <div
               style={{
@@ -3969,7 +3958,7 @@ export default function SettingsPage({
                 {apiKey ? apiKey.slice(0, 8) + "••••••••••••••••" : "(not set)"}
               </code>
               <button className="btn btn-ghost" onClick={onChangeApiKey}>
-                Change API Token
+                {tr("settings.changeApiToken")}
               </button>
             </div>
           </div>
@@ -3984,13 +3973,13 @@ export default function SettingsPage({
         {/* ══════════════════════════════════════════════════════════════════ */}
         <div ref={secContent} style={{ scrollMarginTop: 80 }}>
           <SectionGroupHeader
-            title="Content"
-            subtitle="Parental controls and content filtering by age rating"
+            title={tr("settings.content")}
+            subtitle={tr("settings.parentalControlsAndContentFilteringByAgeRating")}
           />
 
           <div style={{ marginBottom: 40 }}>
             <div className="settings-section-title">
-              Age Rating &amp; Parental Controls
+              {tr("settings.ageRatingControls")}
             </div>
             <div
               style={{
@@ -4000,12 +3989,11 @@ export default function SettingsPage({
                 lineHeight: 1.6,
               }}
             >
-              Set a maximum age rating. Content rated above this age will still
-              be visible but{" "}
+              {tr("settings.ageLimitDescA")}{" "}
               <strong style={{ color: "var(--text)" }}>
-                you won't be able to play it.
+                {tr("settings.ageLimitDescB")}
               </strong>{" "}
-              Set to <em>No restriction</em> to disable this feature entirely.
+              {tr("settings.ageLimitSetTo")} <em>{tr("settings.noRestriction")}</em> {tr("settings.ageLimitDisableRest")}
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -4018,14 +4006,14 @@ export default function SettingsPage({
                     marginBottom: 8,
                   }}
                 >
-                  Rating Country
+                  {tr("settings.ratingCountry")}
                 </div>
                 <SettingsSelect
                   value={ratingCountry}
                   onChange={(v) => setRatingCountry(v)}
                   options={RATING_COUNTRIES.map((c) => ({
                     value: c.code,
-                    label: c.label,
+                    label: tr(`ageRating.${c.code}`),
                   }))}
                 />
               </div>
@@ -4039,22 +4027,22 @@ export default function SettingsPage({
                     marginBottom: 8,
                   }}
                 >
-                  Maximum Allowed Age Rating
+                  {tr("settings.maximumAllowedAgeRating")}
                 </div>
                 <SettingsSelect
                   value={ageLimit}
                   onChange={(v) => setAgeLimit(v)}
-                  options={AGE_LIMIT_OPTIONS}
+                  options={ageLimitOptions()}
                 />
               </div>
 
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <button className="btn btn-primary" onClick={saveAgeSettings}>
-                  Save
+                  {tr("settings.save")}
                 </button>
                 {ageSaved && (
                   <span style={{ fontSize: 13, color: "#48c774" }}>
-                    ✓ Saved
+                    ✓ {tr("settings.saved")}
                   </span>
                 )}
               </div>
@@ -4065,7 +4053,7 @@ export default function SettingsPage({
 
           {/* Player Controls */}
           <div style={{ marginBottom: 40 }}>
-            <div className="settings-section-title">Player Controls</div>
+            <div className="settings-section-title">{tr("settings.playerControls")}</div>
             <div
               style={{
                 fontSize: 13,
@@ -4074,15 +4062,14 @@ export default function SettingsPage({
                 lineHeight: 1.6,
               }}
             >
-              Tune the centre transport. Holding rewind or forward repeats the
-              jump at this interval; every value is saved immediately.
+              {tr("settings.playerControlsDesc")}
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
               <div>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 16 }}>
                   <span style={{ fontSize: 14, fontWeight: 500 }}>
-                    Seek step
+                    {tr("settings.seekStep")}
                   </span>
                   <span style={{ fontSize: 13, color: "var(--text3)" }}>
                     {playerPrefs.seekStep}s
@@ -4104,7 +4091,7 @@ export default function SettingsPage({
               <div>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 16 }}>
                   <span style={{ fontSize: 14, fontWeight: 500 }}>
-                    Hold repeat interval
+                    {tr("settings.holdRepeatInterval")}
                   </span>
                   <span style={{ fontSize: 13, color: "var(--text3)" }}>
                     {(playerPrefs.holdInterval / 1000).toFixed(2)}s
@@ -4122,14 +4109,14 @@ export default function SettingsPage({
                   style={{ width: "100%", accentColor: "var(--red)" }}
                 />
                 <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 4 }}>
-                  Default: 10 seconds every 0.2 seconds. Lower is faster.
+                  {tr("settings.default10SecondsEvery02SecondsLowerIsFaster")}
                 </div>
               </div>
 
               <div>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 16 }}>
                   <span style={{ fontSize: 14, fontWeight: 500 }}>
-                    Estimated intro length
+                    {tr("settings.estimatedIntroLength")}
                   </span>
                   <span style={{ fontSize: 13, color: "var(--text3)" }}>
                     {playerPrefs.genericIntroSeconds}s
@@ -4149,8 +4136,7 @@ export default function SettingsPage({
                   style={{ width: "100%", accentColor: "var(--red)" }}
                 />
                 <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 4 }}>
-                  Used for series without AniSkip data. The first manual skip is
-                  remembered per series.
+                  {tr("settings.introEstimateDesc")}
                 </div>
               </div>
 
@@ -4161,11 +4147,10 @@ export default function SettingsPage({
                 />
                 <div>
                   <div style={{ fontSize: 14, fontWeight: 500 }}>
-                    Estimated intro for every series
+                    {tr("settings.estimatedIntroForEverySeries")}
                   </div>
                   <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>
-                    Show a skip button even when AniSkip has no timing for the
-                    episode.
+                    {tr("settings.alwaysShowSkipDesc")}
                   </div>
                 </div>
               </div>
@@ -4178,13 +4163,13 @@ export default function SettingsPage({
         {/* ══════════════════════════════════════════════════════════════════ */}
         <div ref={secPlayback} style={{ scrollMarginTop: 80 }}>
           <SectionGroupHeader
-            title="Playback"
-            subtitle="Trailer source and auto-watched behavior"
+            title={tr("settings.playback")}
+            subtitle={tr("settings.trailerSourceAndAutoWatchedBehavior")}
           />
 
           {/* Invidious */}
           <div style={{ marginBottom: 40 }}>
-            <div className="settings-section-title">Invidious Instance</div>
+            <div className="settings-section-title">{tr("settings.invidiousInstance")}</div>
             <div
               style={{
                 fontSize: 13,
@@ -4193,13 +4178,11 @@ export default function SettingsPage({
                 lineHeight: 1.6,
               }}
             >
-              Trailers are played via{" "}
+              {tr("settings.trailersVia")}{" "}
               <span style={{ color: "var(--text)", fontWeight: 600 }}>
                 Invidious
               </span>
-              , a privacy-friendly YouTube frontend. Your configured instance is
-              tried first; if it fails, the app automatically falls back through
-              a list of known working instances. The default is{" "}
+              {tr("settings.invidiousDesc")}{" "}
               <code style={{ fontSize: 12 }}>{DEFAULT_INVIDIOUS_BASE}</code>.
               The instance must have its API enabled (
               <code style={{ fontSize: 12 }}>/api/v1/stats</code> reachable).
@@ -4231,7 +4214,7 @@ export default function SettingsPage({
                 {invidiousChecking ? "Checking…" : "Check"}
               </button>
               <button className="btn btn-primary" onClick={saveInvidiousBase}>
-                Save
+                {tr("settings.save")}
               </button>
             </div>
 
@@ -4270,7 +4253,7 @@ export default function SettingsPage({
 
             {invidiousSaved && (
               <div style={{ marginTop: 10, fontSize: 13, color: "#48c774" }}>
-                ✓ Saved
+                ✓ {tr("settings.saved")}
               </div>
             )}
           </div>
@@ -4279,7 +4262,7 @@ export default function SettingsPage({
 
           {/* Auto-Watched Threshold */}
           <div style={{ marginBottom: 40 }}>
-            <div className="settings-section-title">Auto-Watched Threshold</div>
+            <div className="settings-section-title">{tr("settings.autoWatchedThreshold")}</div>
             <div
               style={{
                 fontSize: 13,
@@ -4288,12 +4271,11 @@ export default function SettingsPage({
                 lineHeight: 1.6,
               }}
             >
-              A movie or episode is automatically marked as{" "}
+              {tr("settings.watchedThresholdA")}{" "}
               <span style={{ color: "#48c774", fontWeight: 600 }}>
-                Watched ✓
+                {tr("settings.watchedMark")}
               </span>{" "}
-              when the remaining time drops to this value or below. Set between
-              1 and 300 seconds.
+              {tr("settings.watchedThresholdB")}
             </div>
             <div
               style={{
@@ -4314,16 +4296,16 @@ export default function SettingsPage({
                   onChange={(e) => setWatchedThreshold(e.target.value)}
                 />
                 <span style={{ fontSize: 14, color: "var(--text2)" }}>
-                  seconds
+                  {tr("settings.seconds")}
                 </span>
               </div>
               <button className="btn btn-primary" onClick={handleSaveThreshold}>
-                Save
+                {tr("settings.save")}
               </button>
             </div>
             {saved && (
               <div style={{ marginTop: 10, fontSize: 13, color: "#48c774" }}>
-                ✓ Saved
+                ✓ {tr("settings.saved")}
               </div>
             )}
           </div>
@@ -4332,7 +4314,7 @@ export default function SettingsPage({
 
           {/* Autoplay Next Episode */}
           <div style={{ marginBottom: 40 }}>
-            <div className="settings-section-title">Autoplay Next Episode</div>
+            <div className="settings-section-title">{tr("settings.autoplayNextEpisode")}</div>
             <div
               style={{
                 fontSize: 13,
@@ -4341,7 +4323,7 @@ export default function SettingsPage({
                 lineHeight: 1.6,
               }}
             >
-              Configure how the player behaves when an episode finishes.
+              {tr("settings.configureHowThePlayerBehavesWhenAnEpisodeFinishes")}
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -4363,7 +4345,7 @@ export default function SettingsPage({
                       color: "var(--text)",
                     }}
                   >
-                    Enable Autoplay Next
+                    {tr("settings.enableAutoplayNext")}
                   </div>
                   <div
                     style={{
@@ -4372,8 +4354,7 @@ export default function SettingsPage({
                       marginTop: 2,
                     }}
                   >
-                    Automatically play the next episode when the current one
-                    ends.
+                    {tr("settings.autoplayDesc")}
                   </div>
                 </div>
               </div>
@@ -4396,7 +4377,7 @@ export default function SettingsPage({
                         color: "var(--text2)",
                       }}
                     >
-                      Countdown Duration
+                      {tr("settings.countdownDuration")}
                     </div>
                     <div
                       style={{
@@ -4405,8 +4386,7 @@ export default function SettingsPage({
                         marginBottom: 4,
                       }}
                     >
-                      Number of seconds to display the countdown. Set to 0 to
-                      only show the buttons and not autoplay automatically.
+                      {tr("settings.autoplayCountdownDesc")}
                     </div>
                     <div
                       style={{ display: "flex", alignItems: "center", gap: 12 }}
@@ -4450,7 +4430,7 @@ export default function SettingsPage({
                         marginBottom: 8,
                       }}
                     >
-                      Overlay Position
+                      {tr("settings.overlayPosition")}
                     </div>
                     <div
                       style={{
@@ -4459,8 +4439,7 @@ export default function SettingsPage({
                         marginBottom: 12,
                       }}
                     >
-                      Choose which side of the player the next episode thumbnail
-                      and details are shown.
+                      {tr("settings.autoplaySideDesc")}
                     </div>
                     <SettingsSelect
                       value={autoplayNextLayout}
@@ -4470,8 +4449,8 @@ export default function SettingsPage({
                         flash();
                       }}
                       options={[
-                        { value: "left", label: "Left Side" },
-                        { value: "right", label: "Right Side" },
+                        { value: "left", label: tr("settings.leftSide") },
+                        { value: "right", label: tr("settings.rightSide") },
                       ]}
                     />
                   </div>
@@ -4484,7 +4463,7 @@ export default function SettingsPage({
 
           {/* Intro Skip */}
           <div style={{ marginBottom: 40 }}>
-            <div className="settings-section-title">Anime Intro Skip</div>
+            <div className="settings-section-title">{tr("settings.animeIntroSkip")}</div>
             <div
               style={{
                 fontSize: 13,
@@ -4497,9 +4476,7 @@ export default function SettingsPage({
               <span style={{ color: "var(--text)", fontWeight: 600 }}>
                 AniSkip
               </span>{" "}
-              to detect and skip opening/ending segments in anime. Other series
-              get a learned intro estimate, and every title keeps the five-second
-              hover halo plus the five-second undo pill.
+              {tr("settings.aniskipDesc")}
             </div>
             <div
               style={{
@@ -4512,18 +4489,18 @@ export default function SettingsPage({
               {[
                 {
                   value: "off",
-                  label: "Off",
-                  desc: "Intro skip is disabled.",
+                  label: tr("settings.skipOff"),
+                  desc: tr("settings.skipOffDesc"),
                 },
                 {
                   value: "auto",
-                  label: "Auto Skip",
-                  desc: "Automatically jumps past the intro/outro when reached.",
+                  label: tr("settings.skipAuto"),
+                  desc: tr("settings.skipAutoDesc"),
                 },
                 {
                   value: "manual",
-                  label: "Manual Skip",
-                  desc: 'Shows a "Skip Intro" button at the bottom of the player.',
+                  label: tr("settings.skipManual"),
+                  desc: tr("settings.skipManualDesc"),
                 },
               ].map(({ value, label, desc }, i, arr) => (
                 <div
@@ -4609,8 +4586,8 @@ export default function SettingsPage({
         {/* ══════════════════════════════════════════════════════════════════ */}
         <div ref={secSubtitles} style={{ scrollMarginTop: 80 }}>
           <SectionGroupHeader
-            title="Subtitles"
-            subtitle="Subtitle download source, preferred language, and API key"
+            title={tr("settings.subtitles")}
+            subtitle={tr("settings.subtitleDownloadSourcePreferredLanguageAndApiKey")}
           />
           <SubtitleSettingsSection />
         </div>
@@ -4620,12 +4597,12 @@ export default function SettingsPage({
         {/* ══════════════════════════════════════════════════════════════════ */}
         <div ref={secDownloads} style={{ scrollMarginTop: 80 }}>
           <SectionGroupHeader
-            title="Downloads"
-            subtitle="Where downloaded video files are saved on disk"
+            title={tr("settings.downloads")}
+            subtitle={tr("settings.whereDownloadedVideoFilesAreSavedOnDisk")}
           />
 
           <div style={{ marginBottom: 40 }}>
-            <div className="settings-section-title">Download Folder</div>
+            <div className="settings-section-title">{tr("settings.downloadFolder")}</div>
             <div
               style={{
                 fontSize: 13,
@@ -4634,8 +4611,7 @@ export default function SettingsPage({
                 lineHeight: 1.6,
               }}
             >
-              Downloaded videos will be saved here. Make sure the folder exists
-              and Gigi has write access to it.
+              {tr("settings.downloadFolderDesc")}
             </div>
             <div
               style={{
@@ -4654,16 +4630,16 @@ export default function SettingsPage({
               />
               {isElectron && (
                 <button className="btn btn-secondary" onClick={pickFolder}>
-                  Browse …
+                  {tr("settings.browse")}
                 </button>
               )}
               <button className="btn btn-primary" onClick={handleSavePath}>
-                Save
+                {tr("settings.save")}
               </button>
             </div>
             {saved && (
               <div style={{ marginTop: 10, fontSize: 13, color: "#4caf50" }}>
-                ✓ Saved
+                ✓ {tr("settings.saved")}
               </div>
             )}
             {!downloadPath && (
@@ -4680,8 +4656,8 @@ export default function SettingsPage({
         {/* ══════════════════════════════════════════════════════════════════ */}
         <div ref={secNotifications} style={{ scrollMarginTop: 80 }}>
           <SectionGroupHeader
-            title="Notifications"
-            subtitle="Desktop alerts for downloads and new episode releases"
+            title={tr("settings.notifications")}
+            subtitle={tr("settings.desktopAlertsForDownloadsAndNewEpisodeReleases")}
           />
           <NotificationsSection />
         </div>
@@ -4691,8 +4667,8 @@ export default function SettingsPage({
         {/* ══════════════════════════════════════════════════════════════════ */}
         <div ref={secDiscordRpc} style={{ scrollMarginTop: 80 }}>
           <SectionGroupHeader
-            title="Discord Rich Presence"
-            subtitle="Show what you're watching on your Discord profile"
+            title={tr("settings.discordRichPresence")}
+            subtitle={tr("settings.showWhatYouReWatchingOnYourDiscordProfile")}
           />
           <DiscordRpcSection />
         </div>
@@ -4741,7 +4717,7 @@ export default function SettingsPage({
         <div ref={secStorage} style={{ scrollMarginTop: 80 }}>
           <SectionGroupHeader
             title={t("settings.storage")}
-            subtitle="Clear cache, watch progress, downloads, or reset the entire app"
+            subtitle={tr("settings.clearCacheWatchProgressDownloadsOrResetTheEntireApp")}
           />
 
           <div
@@ -4755,9 +4731,9 @@ export default function SettingsPage({
             {/* Install location */}
             <div style={{ padding: "22px 24px" }}>
               <CleanRow
-                title="Install Location"
-                description="Opens the folder where Gigi is installed."
-                buttonLabel="Open Folder"
+                title={tr("settings.installLocation")}
+                description={tr("settings.opensTheFolderWhereGigiIsInstalled")}
+                buttonLabel={tr("settings.openFolder")}
                 onAction={async () => {
                   const p = await window.electron?.getInstallPath?.();
                   if (p) window.electron.openPath(p);
@@ -4770,9 +4746,9 @@ export default function SettingsPage({
             {/* Cache */}
             <div style={{ padding: "22px 24px" }}>
               <CleanRow
-                title="Clear Cache"
-                description="Removes temporary browser cache, shader cache, and service worker data from all internal sessions (main, video player, trailer). Does not affect your personal data or settings."
-                buttonLabel="Clear Cache"
+                title={tr("settings.clearCache")}
+                description={tr("settings.removesTemporaryBrowserCacheShaderCacheAndServiceWor")}
+                buttonLabel={tr("settings.clearCacheBtn")}
                 onAction={handleClearCache}
                 sizeLabel={formatBytes(sizes.cache)}
               />
@@ -4783,9 +4759,9 @@ export default function SettingsPage({
             {/* Watch Progress */}
             <div style={{ padding: "22px 24px" }}>
               <CleanRow
-                title="Clear Watch Progress"
-                description="Resets all watch history, continue-watching progress, and watched / completed markings for movies and series. Also clears internal video player session data."
-                buttonLabel="Clear Progress"
+                title={tr("settings.clearWatchProgressConfirm")}
+                description={tr("settings.resetsAllWatchHistoryContinueWatchingProgressAndWatc")}
+                buttonLabel={tr("settings.clearProgressBtn")}
                 onAction={() =>
                   new Promise((resolve) => {
                     setShowProgressConfirm(true);
@@ -4801,9 +4777,9 @@ export default function SettingsPage({
             {/* Delete Downloads */}
             <div style={{ padding: "22px 24px" }}>
               <CleanRow
-                title="Delete All Downloads"
-                description="Permanently deletes all video files that were downloaded through Gigi and removes them from the download list. Only files downloaded through the app will be deleted, nothing else in your folder is touched."
-                buttonLabel="Delete All"
+                title={tr("settings.deleteAllDownloadsConfirm")}
+                description={tr("settings.permanentlyDeletesAllVideoFilesThatWereDownloadedThr")}
+                buttonLabel={tr("settings.deleteAllBtn")}
                 onAction={() =>
                   new Promise((resolve) => {
                     setShowDeleteDlConfirm(true);
@@ -4844,7 +4820,7 @@ export default function SettingsPage({
                       gap: 8,
                     }}
                   >
-                    Reset App
+                    {tr("settings.resetApp")}
                     <span
                       style={{
                         fontSize: 10,
@@ -4858,7 +4834,7 @@ export default function SettingsPage({
                         textTransform: "uppercase",
                       }}
                     >
-                      Irreversible
+                      {tr("settings.irreversible")}
                     </span>
                   </div>
                   <div
@@ -4868,10 +4844,7 @@ export default function SettingsPage({
                       lineHeight: 1.6,
                     }}
                   >
-                    Completely resets Gigi to factory defaults, clears all
-                    settings, API Token, saved library, watch history/progress,
-                    and all cached data. Your downloaded video files will not be
-                    touched.
+                    {tr("settings.resetDesc")}
                   </div>
                 </div>
                 <div style={{ flexShrink: 0, paddingTop: 2 }}>
@@ -4891,7 +4864,7 @@ export default function SettingsPage({
                       transition: "all 0.2s",
                     }}
                   >
-                    Reset App
+                    {tr("settings.resetApp")}
                   </button>
                 </div>
               </div>

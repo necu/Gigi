@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { TrashIcon, SubtitlesIcon, SettingsIcon } from "./Icons";
 import { storage, STORAGE_KEYS, secureStorage } from "../utils/storage";
 import { SUBTITLE_LANGUAGES } from "../utils/subtitles";
+import { translate as tr } from "../utils/i18n";
 
 // ── Subtitle Downloader Modal (for retroactive subtitle download) ──────────────
 export default function SubtitleDownloaderModal({
@@ -214,7 +215,7 @@ export default function SubtitleDownloaderModal({
                   marginBottom: 8,
                 }}
               >
-                Downloaded subtitles
+                {tr("subsModal.downloadedSubtitles")}
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                 {existingSubs.map((sp) => (
@@ -298,7 +299,7 @@ export default function SubtitleDownloaderModal({
                       className="icon-btn"
                       disabled={deletingPath === sp.path}
                       onClick={() => handleDeleteSub(sp)}
-                      title="Delete this subtitle file"
+                      title={tr("subsModal.deleteThisSubtitleFile")}
                       style={{
                         flexShrink: 0,
                         opacity: deletingPath === sp.path ? 0.4 : 1,
@@ -325,7 +326,7 @@ export default function SubtitleDownloaderModal({
             }}
           >
             <span style={{ fontSize: 12, color: "var(--text3)" }}>
-              Download more:
+              {tr("subsModal.downloadMore")}
             </span>
             <select
               value={langFilter}
@@ -343,7 +344,7 @@ export default function SubtitleDownloaderModal({
                 cursor: "pointer",
               }}
             >
-              <option value="">All languages</option>
+              <option value="">{tr("subsModal.allLanguages")}</option>
               {SUBTITLE_LANGUAGES.map((l) => (
                 <option key={l.code} value={l.code}>
                   {l.label}
@@ -390,7 +391,7 @@ export default function SubtitleDownloaderModal({
               >
                 <span>
                   <span style={{ color: "var(--red)", fontWeight: 600 }}>
-                    No subtitle API key set.
+                    {tr("subsModal.noSubtitleApiKeySet")}
                   </span>{" "}
                   Add/Generate a Wyzie or SubDL key in Settings to search and
                   download subtitles.
@@ -452,7 +453,7 @@ export default function SubtitleDownloaderModal({
                   textAlign: "center",
                 }}
               >
-                No subtitles found for this language
+                {tr("subsModal.noSubtitlesFoundForThisLanguage")}
               </div>
             )}
             {!searching &&
@@ -579,7 +580,7 @@ export default function SubtitleDownloaderModal({
                               fontStyle: "italic",
                             }}
                           >
-                            already downloaded
+                            {tr("subsModal.alreadyDownloaded")}
                           </span>
                         )}
                         {r.hearing_impaired && (
@@ -657,7 +658,7 @@ export default function SubtitleDownloaderModal({
                 </button>
                 {!dl.filePath && (
                   <span style={{ fontSize: 12, color: "var(--red)" }}>
-                    No file path, needs completed download
+                    {tr("subsModal.noFilePathNeedsCompletedDownload")}
                   </span>
                 )}
                 {dlError && (
@@ -669,7 +670,7 @@ export default function SubtitleDownloaderModal({
             )}
             <div style={{ flex: 1 }} />
             <button className="btn btn-ghost" onClick={onClose}>
-              Close
+              {tr("subsModal.close")}
             </button>
           </div>
         </div>

@@ -600,6 +600,7 @@ function register(getMainWindow) {
             try {
               const ext = path.extname(downloads[idx].filePath) || ".mp4";
               const safeName = name
+                // oxlint-disable-next-line no-control-regex -- filename sanitization
                 .replace(/[<>:"/\\|?*\x00-\x1f]/g, "")
                 .replace(/\s+/g, " ")
                 .trim();

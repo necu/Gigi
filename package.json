@@ -16,6 +16,8 @@
   "scripts": {
     "dev": "vite build --watch",
     "start": "vite build && electron .",
+    "test": "node --test test",
+    "lint": "oxlint src",
     "dist": "cross-env ELECTRON_DIST=1 vite build && npm run dist:linux && npm run dist:win && npm run dist:mac",
     "dist:linux": "cross-env ELECTRON_DIST=1 vite build && electron-builder --linux deb rpm AppImage pacman --publish never",
     "dist:deb": "cross-env ELECTRON_DIST=1 vite build && electron-builder --linux deb --publish never",
@@ -35,10 +37,14 @@
   "devDependencies": {
     "@vitejs/plugin-react": "^4.7.0",
     "cross-env": "^7.0.3",
-    "electron": "^45.2.1",
+    "electron": "^45.5.0",
     "electron-builder": "^26.18.0",
-    "terser": "^5.46.0",
+    "oxlint": "^1.95.0",
+    "terser": "^5.51.4",
     "vite": "^7.3.1"
+  },
+  "overrides": {
+    "minimatch@>=7.0.0 <11.0.1": "^11.0.1"
   },
   "build": {
     "appId": "com.truelockmc.streambert",
@@ -190,8 +196,9 @@
     ]
   },
   "allowScripts": {
-    "electron@40.10.6": true,
+    "electron@45.5.0": true,
     "electron-winstaller@5.4.0": true,
-    "esbuild@0.28.1": true
+    "esbuild@0.28.1": true,
+    "esbuild@0.28.2": true
   }
 }

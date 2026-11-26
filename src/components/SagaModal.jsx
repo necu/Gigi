@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { translate as tr } from "../utils/i18n";
 import { discoverSagas } from "../utils/sagas";
 import { imgUrl } from "../utils/api";
 import { CloseIcon } from "./Icons";
@@ -150,7 +151,7 @@ export default function SagaModal({
       >
         <div className="saga-modal__header">
           <div>
-            <div className="saga-modal__title">Build a saga</div>
+            <div className="saga-modal__title">{tr("saga.buildASaga")}</div>
             <div className="saga-modal__sub">
               {title} can be part of a bigger story. Save every part at once and
               the library keeps them together as a playlist.
@@ -159,7 +160,7 @@ export default function SagaModal({
           <button
             className="icon-btn"
             onClick={() => onClose?.()}
-            aria-label="Close"
+            aria-label={tr("saga.close")}
           >
             <CloseIcon />
           </button>
@@ -285,7 +286,7 @@ export default function SagaModal({
             className="btn btn-ghost"
             onClick={() => run(true)}
             disabled={loading || deepLoading}
-            title="Look for collections that share cast, crew, music, photography and themes"
+            title={tr("saga.lookForCollectionsThatShareCastCrewMusicPhotogra")}
           >
             {deepLoading
               ? `Scanning ${STAGE_LABELS[stage] || "connections"}…`
@@ -293,7 +294,7 @@ export default function SagaModal({
           </button>
           <div className="saga-modal__spacer" />
           <button className="btn btn-ghost" onClick={() => onClose?.()}>
-            Cancel
+            {tr("saga.cancel")}
           </button>
           <button
             className="btn btn-secondary"

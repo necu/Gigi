@@ -7,17 +7,19 @@ import {
   PLAYLIST_MOMENTS,
   PLAYLIST_TERM_IDEAS,
   buildPlaylist,
-  momentById,
   momentForNow,
 } from "../utils/playlistBrain";
 import { getWatchKey } from "../utils/watchlist";
 import { usePlaylists } from "../utils/usePlaylists";
+import { useT } from "../utils/i18n";
+import { storage } from "../utils/storage";
 
 const uniq = (values) => [...new Set((values || []).filter(Boolean))];
 
 function emptyDraft() {
   return {
     name: "",
+    type: "movie",
     moment: momentForNow(),
     genre: "",
     subgenre: "",
@@ -25,20 +27,57 @@ function emptyDraft() {
   };
 }
 
-function autoName(draft) {
-  const moment = momentById(draft.moment);
+function autoName(draft, t) {
+  const moment = t(`playlist.moment.${draft.moment}.label`);
   const focus =
     draft.genre ||
     draft.subgenre.trim() ||
     draft.terms[0] ||
-    "slow picks";
-  return `${moment.label} · ${focus}`;
+    t("playlist.slowPicks");
+  return `${moment} · ${focus}`;
 }
 
 function yearOf(item) {
   return (
     item?.year || (item?.release_date || item?.first_air_date || "").slice(0, 4)
   );
+}
+
+function isPersonPlaylist(playlist) {
+  return playlist?.kind === "person" && Boolean(playlist?.meta?.personId);
+}
+
+function playlistCover(playlist) {
+  if (isPersonPlaylist(playlist)) {
+    return playlist.meta.profilePath || playlist.posterPath;
+  }
+  return playlist?.posterPath || null;
+}
+
+function playlistMetaLine(playlist, t) {
+  if (isPersonPlaylist(playlist)) {
+    const meta = playlist.meta || {};
+    const years =
+      meta.yearStart && meta.yearEnd
+        ? `${meta.yearStart}–${meta.yearEnd}`
+        : null;
+    return [
+      meta.filterLabel || t("playlist.filmography"),
+      years,
+      (playlist.itemCount || 0) === 1
+        ? t("playlist.creditOne")
+        : t("playlist.credits", { n: playlist.itemCount || 0 }),
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  }
+  return `${t(`playlist.moment.${playlist.moment || "any"}.label`)} · ${
+    playlist.genre || t("playlist.mixed")
+  } · ${
+    (playlist.itemCount || 0) === 1
+      ? t("playlist.filmOne")
+      : t("playlist.filmsCount", { n: playlist.itemCount || 0 })
+  }`;
 }
 
 function itemsToMap(items) {
@@ -48,6 +87,81 @@ function itemsToMap(items) {
     if (key) map.set(key, item);
   }
   return map;
+}
+
+function releaseDateOf(item) {
+  return item?.release_date || item?.first_air_date || "";
+}
+
+function sortByRelease(items) {
+  return [...(items || [])].sort((a, b) => {
+    const dateA = releaseDateOf(a);
+    const dateB = releaseDateOf(b);
+    if (!dateA && !dateB) {
+      return String(a?.title || a?.name || "").localeCompare(
+        String(b?.title || b?.name || ""),
+      );
+    }
+    if (!dateA) return 1;
+    if (!dateB) return -1;
+    return (
+      dateA.localeCompare(dateB) ||
+      String(a?.title || a?.name || "").localeCompare(
+        String(b?.title || b?.name || ""),
+      )
+    );
+  });
+}
+
+function playbackKey(item) {
+  if (!item?.id) return null;
+  if (item.media_type === "tv") {
+    if (item.season != null && item.episode != null) {
+      return `tv_${item.id}_s${item.season}e${item.episode}`;
+    }
+    return `tv_${item.id}`;
+  }
+  return `movie_${item.id}`;
+}
+
+function isItemWatched(item, watched, progress) {
+  const key = playbackKey(item);
+  if (!key) return false;
+  if (watched?.[key]) return true;
+  const pct = Number(progress?.[key]);
+  return Number.isFinite(pct) && pct >= 90;
+}
+
+function downloadPlaylist(playlist, items) {
+  const payload = {
+    version: 1,
+    kind: "gigi-playlist",
+    exportedAt: new Date().toISOString(),
+    name: playlist?.name || "Playlist",
+    moment: playlist?.moment || "any",
+    genre: playlist?.genre || "",
+    subgenre: playlist?.subgenre || "",
+    terms: playlist?.terms || [],
+    tags: playlist?.tags || [],
+    meta: playlist?.meta || {},
+    items: items || [],
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {
+    type: "application/json",
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  const safeName = String(payload.name || "playlist")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+  link.href = url;
+  link.download = `${safeName || "playlist"}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function libraryTags(watchlist) {
@@ -64,7 +178,8 @@ function libraryTags(watchlist) {
 }
 
 function PlaylistPickCard({ item, selected, onToggle, onOpen }) {
-  const title = item.title || item.name || "Untitled";
+  const t = useT();
+  const title = item.title || item.name || t("person.untitled");
   const reason = item._why?.reasons?.[0]?.label;
   const match = item._why?.match;
 
@@ -74,7 +189,11 @@ function PlaylistPickCard({ item, selected, onToggle, onOpen }) {
         type="button"
         className="playlist-pick__poster"
         onClick={() => onToggle(item)}
-        aria-label={selected ? `Remove ${title}` : `Add ${title}`}
+        aria-label={
+          selected
+            ? t("playlist.removeTitle", { title })
+            : t("playlist.addTitle", { title })
+        }
       >
         {item.poster_path ? (
           <img src={imgUrl(item.poster_path, "w342")} alt="" loading="lazy" />
@@ -93,7 +212,8 @@ function PlaylistPickCard({ item, selected, onToggle, onOpen }) {
           {title}
         </div>
         <div className="playlist-pick__meta">
-          {yearOf(item) || "—"} · Movie
+          {yearOf(item) || "—"} ·{" "}
+          {item.media_type === "tv" ? t("person.series") : t("person.movie")}
         </div>
         {reason && <div className="playlist-pick__reason">{reason}</div>}
         <div className="playlist-pick__actions">
@@ -102,18 +222,181 @@ function PlaylistPickCard({ item, selected, onToggle, onOpen }) {
             className="playlist-pick__add"
             onClick={() => onToggle(item)}
           >
-            {selected ? "Added" : "Add"}
+            {selected ? t("playlist.added") : t("playlist.add")}
           </button>
           <button
             type="button"
             className="playlist-pick__details"
             onClick={() => onOpen?.(item)}
           >
-            Details
+            {t("playlist.details")}
           </button>
         </div>
       </div>
     </article>
+  );
+}
+
+function PersonPlaylistCard({ item, onSelect }) {
+  const t = useT();
+  const title = item.title || item.name || t("person.untitled");
+  const year = yearOf(item);
+  const type =
+    item.media_type === "tv" ? t("person.series") : t("person.movie");
+  const roles = Array.isArray(item.roles) ? item.roles.filter(Boolean) : [];
+
+  return (
+    <article className="playlist-person-card">
+      <button
+        type="button"
+        className="playlist-person-card__poster"
+        onClick={() => onSelect?.(item)}
+        aria-label={t("playlist.openTitle", { title })}
+      >
+        {item.poster_path ? (
+          <img
+            src={imgUrl(item.poster_path, "w342")}
+            alt=""
+            loading="lazy"
+            decoding="async"
+          />
+        ) : (
+          <span className="playlist-person-card__placeholder">
+            <FilmIcon />
+          </span>
+        )}
+        <span className="playlist-person-card__type">{type}</span>
+      </button>
+      <div className="playlist-person-card__title" title={title}>
+        {title}
+      </div>
+      <div className="playlist-person-card__meta">
+        {year || "—"} · {type}
+      </div>
+      {roles.length > 0 && (
+        <div className="playlist-person-card__role" title={roles.join(" · ")}>
+          {roles.slice(0, 2).join(" · ")}
+        </div>
+      )}
+    </article>
+  );
+}
+
+function PersonPlaylistView({
+  playlist,
+  items,
+  onSelect,
+  onOpenProfile,
+  onDelete,
+}) {
+  const t = useT();
+  const meta = playlist.meta || {};
+  const groups = useMemo(() => {
+    const map = new Map();
+    for (const item of sortByRelease(items)) {
+      const year = Number(yearOf(item));
+      const key = year
+        ? `${Math.floor(year / 10) * 10}s`
+        : t("playlist.undated");
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(item);
+    }
+    return [...map.entries()];
+  }, [items, t]);
+  const years =
+    meta.yearStart && meta.yearEnd
+      ? `${meta.yearStart}–${meta.yearEnd}`
+      : null;
+  const name = meta.personName || playlist.name || t("playlist.filmography");
+  const metaLine = [
+    meta.filterLabel || t("playlist.filmography"),
+    meta.department && meta.department !== meta.filterLabel
+      ? meta.department
+      : null,
+    years,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  return (
+    <>
+      <section className="playlist-person">
+        <div className="playlist-person__portrait">
+          {meta.profilePath ? (
+            <img src={imgUrl(meta.profilePath, "h632")} alt="" />
+          ) : (
+            <span>{name[0] || "?"}</span>
+          )}
+        </div>
+        <div className="playlist-person__body">
+          <div className="playlist-studio__eyebrow">
+            {t("playlist.filmographyPlaylist")}
+          </div>
+          <h2 className="playlist-person__name">{name}</h2>
+          <div className="playlist-person__meta">{metaLine}</div>
+          <p className="playlist-person__sub">
+            {items.length === 1
+              ? t("playlist.personSubOne")
+              : t("playlist.personSub", { n: items.length })}
+            {meta.filterLabel
+              ? t("playlist.personFiltered", { label: meta.filterLabel })
+              : ""}
+          </p>
+          <div className="playlist-person__actions">
+            {meta.personId && onOpenProfile && (
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() =>
+                  onOpenProfile({ id: meta.personId, name })
+                }
+              >
+                {t("playlist.openProfile")}
+              </button>
+            )}
+            {onDelete && (
+              <button
+                type="button"
+                className="btn btn-danger"
+                onClick={onDelete}
+              >
+                {t("playlist.deletePlaylist")}
+              </button>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {groups.length === 0 ? (
+        <div className="playlist-person-empty">
+          {t("playlist.noCredits")}
+        </div>
+      ) : (
+        <div className="playlist-person-timeline">
+          {groups.map(([label, group]) => (
+            <section className="playlist-person-decade" key={label}>
+              <div className="playlist-person-decade__head">
+                <h3>{label}</h3>
+                <span>
+                  {group.length === 1
+                    ? t("playlist.creditOne")
+                    : t("playlist.credits", { n: group.length })}
+                </span>
+              </div>
+              <div className="playlist-person-grid">
+                {group.map((item) => (
+                  <PersonPlaylistCard
+                    key={`${item.media_type}_${item.id}`}
+                    item={item}
+                    onSelect={onSelect}
+                  />
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -122,6 +405,13 @@ export default function PlaylistsPage({
   taste,
   watchlist,
   onSelect,
+  onPlayQueue,
+  onOpenPerson,
+  watched = {},
+  progress = {},
+  onMarkWatched,
+  onMarkUnwatched,
+  initialPlaylistId = null,
 }) {
   const {
     playlists,
@@ -131,22 +421,54 @@ export default function PlaylistsPage({
     remove,
     touch,
   } = usePlaylists();
+  const t = useT();
 
   const [draft, setDraft] = useState(emptyDraft);
   const [activeId, setActiveId] = useState(null);
+  const [activePlaylist, setActivePlaylist] = useState(null);
   const [selected, setSelected] = useState(() => new Map());
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [undoDelete, setUndoDelete] = useState(null);
+  const [dragKey, setDragKey] = useState(null);
+  const [dragOverKey, setDragOverKey] = useState(null);
+  const [favoritePlaylistIds, setFavoritePlaylistIds] = useState(() => {
+    const saved = storage.get("favoritePlaylists");
+    return new Set(Array.isArray(saved) ? saved : []);
+  });
   const requestRef = useRef(0);
   const resultsRef = useRef(null);
+  const importRef = useRef(null);
+  const undoDeleteTimerRef = useRef(null);
 
   const tagIdeas = useMemo(
     () => uniq([...PLAYLIST_TERM_IDEAS, ...libraryTags(watchlist)]),
     [watchlist],
   );
+
+  const orderedPlaylists = useMemo(
+    () =>
+      [...playlists].sort(
+        (a, b) =>
+          Number(favoritePlaylistIds.has(b.id)) -
+          Number(favoritePlaylistIds.has(a.id)),
+      ),
+    [favoritePlaylistIds, playlists],
+  );
+
+  const toggleFavoritePlaylist = useCallback((playlistId) => {
+    setFavoritePlaylistIds((current) => {
+      const next = new Set(current);
+      if (next.has(playlistId)) next.delete(playlistId);
+      else next.add(playlistId);
+      storage.set("favoritePlaylists", [...next]);
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     if (!notice) return undefined;
@@ -154,11 +476,16 @@ export default function PlaylistsPage({
     return () => clearTimeout(timer);
   }, [notice]);
 
+  useEffect(() => () => {
+    if (undoDeleteTimerRef.current) clearTimeout(undoDeleteTimerRef.current);
+  }, []);
+
   const selectedItems = useMemo(() => [...selected.values()], [selected]);
 
   const newPlaylist = useCallback(() => {
     requestRef.current += 1;
     setActiveId(null);
+    setActivePlaylist(null);
     setDraft(emptyDraft());
     setSelected(new Map());
     setResults([]);
@@ -174,14 +501,17 @@ export default function PlaylistsPage({
       setError(null);
       setNotice(null);
       setResults([]);
+      setActivePlaylist(null);
       setActiveId(summary.id);
       const full = await load(summary.id);
       if (!full) {
-        setError("Could not open this playlist. Try again.");
+        setError(t("playlist.openError"));
         return;
       }
+      setActivePlaylist(full);
       setDraft({
         name: full.name || "",
+        type: full.meta?.mediaType || "movie",
         moment: full.moment || "any",
         genre: full.genre || "",
         subgenre: full.subgenre || "",
@@ -195,7 +525,7 @@ export default function PlaylistsPage({
 
   const generate = useCallback(async () => {
     if (!apiKey) {
-      setError("Add your TMDB API key in Settings to discover films.");
+      setError(t("playlist.apiKeyError"));
       return;
     }
     const requestId = ++requestRef.current;
@@ -210,16 +540,17 @@ export default function PlaylistsPage({
         genre: draft.genre,
         subgenre: draft.subgenre,
         terms: draft.terms,
+        mediaType: draft.type,
         limit: 30,
       });
       if (requestId !== requestRef.current) return;
       setResults(result.items || []);
       if (!result.items?.length) {
-        setError("No films matched that mood. Try fewer terms or another genre.");
+        setError(t("playlist.noMatches"));
       }
     } catch {
       if (requestId === requestRef.current) {
-        setError("Could not reach TMDB. Check your connection and try again.");
+        setError(t("playlist.tmdbError"));
       }
     } finally {
       if (requestId === requestRef.current) setLoading(false);
@@ -252,14 +583,16 @@ export default function PlaylistsPage({
     try {
       const items = selectedItems;
       const tags = uniq([
-        momentById(draft.moment).label,
+        t(`playlist.moment.${draft.moment}.label`),
         draft.genre,
         draft.subgenre,
         ...draft.terms,
       ]);
       const saved = await save({
         id: activeId || undefined,
-        name: draft.name.trim() || autoName(draft),
+        name: draft.name.trim() || autoName(draft, t),
+        kind: activePlaylist?.kind || "mood",
+        meta: { ...activePlaylist?.meta, mediaType: draft.type },
         moment: draft.moment,
         genre: draft.genre,
         subgenre: draft.subgenre,
@@ -270,57 +603,225 @@ export default function PlaylistsPage({
       setActiveId(saved.id);
       setDraft((previous) => ({ ...previous, name: saved.name }));
       setNotice(
-        items.length > 0
-          ? `Saved “${saved.name}” with ${items.length} film${
-              items.length === 1 ? "" : "s"
-            }.`
-          : `Saved “${saved.name}”. You can add films later.`,
+        items.length === 1
+          ? t("playlist.savedNoticeOne", { name: saved.name })
+          : items.length > 1
+            ? t("playlist.savedNotice", {
+                name: saved.name,
+                n: items.length,
+              })
+            : t("playlist.savedEmpty", { name: saved.name }),
       );
     } catch {
-      setError("Could not save this playlist.");
+      setError(t("playlist.saveError"));
     } finally {
       setSaving(false);
     }
-  }, [activeId, draft, save, selectedItems]);
+  }, [activeId, activePlaylist, draft, save, selectedItems]);
+
+  const initialPlaylistOpenedRef = useRef(false);
+  useEffect(() => {
+    if (initialPlaylistOpenedRef.current || !initialPlaylistId || loadingList)
+      return;
+    const target = playlists.find(
+      (playlist) => playlist.id === initialPlaylistId,
+    );
+    if (!target) return;
+    initialPlaylistOpenedRef.current = true;
+    openPlaylist(target);
+  }, [initialPlaylistId, loadingList, playlists, openPlaylist]);
 
   const deleteCurrent = useCallback(async () => {
     if (!activeId) return;
     const current = playlists.find((playlist) => playlist.id === activeId);
-    if (
-      !window.confirm(
-        `Delete “${current?.name || draft.name || "this playlist"}”?`,
-      )
-    ) {
-      return;
-    }
-    await remove(activeId);
-    newPlaylist();
-  }, [activeId, draft.name, newPlaylist, playlists, remove]);
+    setDeleteTarget({
+      id: activeId,
+      name: current?.name || draft.name || t("playlist.thisPlaylist"),
+      playlist: activePlaylist,
+    });
+  }, [activeId, activePlaylist, draft.name, playlists, t]);
 
-  const openFirst = useCallback(() => {
-    if (selectedItems[0]) onSelect?.(selectedItems[0]);
-  }, [onSelect, selectedItems]);
+  const confirmDelete = useCallback(async () => {
+    if (!deleteTarget) return;
+    const removed = deleteTarget;
+    await remove(removed.id);
+    setDeleteTarget(null);
+    newPlaylist();
+    if (undoDeleteTimerRef.current) clearTimeout(undoDeleteTimerRef.current);
+    setUndoDelete({ playlist: removed.playlist, name: removed.name });
+    setNotice(t("playlist.deletedNotice"));
+    undoDeleteTimerRef.current = setTimeout(() => setUndoDelete(null), 12000);
+  }, [deleteTarget, newPlaylist, remove, t]);
+
+  const undoRemove = useCallback(async () => {
+    if (!undoDelete?.playlist) return;
+    if (undoDeleteTimerRef.current) clearTimeout(undoDeleteTimerRef.current);
+    const restored = await save(undoDelete.playlist);
+    setUndoDelete(null);
+    setActiveId(restored.id);
+    setActivePlaylist(restored);
+    setDraft({
+      name: restored.name || "",
+      type: restored.meta?.mediaType || "movie",
+      moment: restored.moment || "any",
+      genre: restored.genre || "",
+      subgenre: restored.subgenre || "",
+      terms: Array.isArray(restored.terms) ? restored.terms : [],
+    });
+    setSelected(itemsToMap(restored.items));
+    setNotice(t("playlist.actionRestored", { name: restored.name }));
+  }, [save, t, undoDelete]);
+
+  const playAll = useCallback(() => {
+    if (!selectedItems.length) return;
+    if (onPlayQueue) onPlayQueue(selectedItems, 0);
+    else onSelect?.(selectedItems[0]);
+  }, [onPlayQueue, onSelect, selectedItems]);
+
+  const shufflePlay = useCallback(() => {
+    if (!selectedItems.length) return;
+    const index = Math.floor(Math.random() * selectedItems.length);
+    if (onPlayQueue) onPlayQueue(selectedItems, index);
+    else onSelect?.(selectedItems[index]);
+  }, [onPlayQueue, onSelect, selectedItems]);
+
+  const firstUnwatched = useMemo(
+    () => selectedItems.find((item) => !isItemWatched(item, watched, progress)) || null,
+    [progress, selectedItems, watched],
+  );
+  const watchedCount = useMemo(
+    () => selectedItems.filter((item) => isItemWatched(item, watched, progress)).length,
+    [progress, selectedItems, watched],
+  );
+  const watchedPercent = selectedItems.length
+    ? Math.round((watchedCount / selectedItems.length) * 100)
+    : 0;
+
+  const continuePlaylist = useCallback(() => {
+    if (!firstUnwatched) return;
+    const index = selectedItems.indexOf(firstUnwatched);
+    if (onPlayQueue) onPlayQueue(selectedItems, Math.max(0, index));
+    else onSelect?.(firstUnwatched);
+  }, [firstUnwatched, onPlayQueue, onSelect, selectedItems]);
+
+  const toggleWatched = useCallback(
+    (item) => {
+      const key = playbackKey(item);
+      if (!key) return;
+      if (isItemWatched(item, watched, progress)) onMarkUnwatched?.(key);
+      else onMarkWatched?.(key);
+    },
+    [onMarkUnwatched, onMarkWatched, progress, watched],
+  );
+
+  const exportCurrent = useCallback(() => {
+    downloadPlaylist(activePlaylist || { name: draft.name, ...draft }, selectedItems);
+    setNotice(t("playlist.actionExportDone"));
+  }, [activePlaylist, draft, selectedItems, t]);
+
+  const importPlaylist = useCallback(
+    async (event) => {
+      const file = event.target.files?.[0];
+      event.target.value = "";
+      if (!file) return;
+      try {
+        const parsed = JSON.parse(await file.text());
+        const items = Array.isArray(parsed?.items) ? parsed.items : [];
+        if (!items.length) throw new Error("empty playlist");
+        const saved = await save({
+          name: parsed.name || file.name.replace(/\.json$/i, ""),
+          moment: parsed.moment || "any",
+          genre: parsed.genre || "",
+          subgenre: parsed.subgenre || "",
+          terms: Array.isArray(parsed.terms) ? parsed.terms : [],
+          tags: Array.isArray(parsed.tags) ? parsed.tags : [],
+          meta: parsed.meta && typeof parsed.meta === "object" ? parsed.meta : {},
+          items,
+        });
+        setActiveId(saved.id);
+        setActivePlaylist(saved);
+        setDraft({
+          name: saved.name || "",
+          type: saved.meta?.mediaType || "movie",
+          moment: saved.moment || "any",
+          genre: saved.genre || "",
+          subgenre: saved.subgenre || "",
+          terms: Array.isArray(saved.terms) ? saved.terms : [],
+        });
+        setSelected(itemsToMap(saved.items));
+        setNotice(t("playlist.actionImportDone"));
+      } catch {
+        setError(t("playlist.actionImportError"));
+      }
+    },
+    [save, t],
+  );
+
+  const moveSelected = useCallback((key, delta) => {
+    setSelected((previous) => {
+      const entries = [...previous.entries()];
+      const from = entries.findIndex(([entryKey]) => entryKey === key);
+      const to = from + delta;
+      if (from < 0 || to < 0 || to >= entries.length) return previous;
+      const [entry] = entries.splice(from, 1);
+      entries.splice(to, 0, entry);
+      return new Map(entries);
+    });
+  }, []);
+
+  const moveSelectedTo = useCallback((key, targetKey) => {
+    if (!key || !targetKey || key === targetKey) return;
+    setSelected((previous) => {
+      const entries = [...previous.entries()];
+      const from = entries.findIndex(([entryKey]) => entryKey === key);
+      const to = entries.findIndex(([entryKey]) => entryKey === targetKey);
+      if (from < 0 || to < 0) return previous;
+      const [entry] = entries.splice(from, 1);
+      entries.splice(to, 0, entry);
+      return new Map(entries);
+    });
+  }, []);
+
+  const sortSelectedBy = useCallback((field) => {
+    setSelected((previous) => {
+      const entries = [...previous.entries()];
+      entries.sort(([, a], [, b]) => {
+        if (field === "year") {
+          return (
+            (Number(yearOf(a)) || Number.MAX_SAFE_INTEGER) -
+            (Number(yearOf(b)) || Number.MAX_SAFE_INTEGER)
+          );
+        }
+        return (Number(b.vote_average) || 0) - (Number(a.vote_average) || 0);
+      });
+      return new Map(entries);
+    });
+  }, []);
 
   return (
     <div className="fade-in playlists-page">
+      <input
+        ref={importRef}
+        type="file"
+        accept="application/json,.json"
+        className="playlist-import-input"
+        onChange={importPlaylist}
+      />
       <header className="playlists-header">
         <div>
-          <div className="library-kicker">Watch by moment</div>
-          <h1 className="library-title">Playlists</h1>
-          <p className="playlists-sub">
-            Start from the hour, a genre or a vague idea. Keep only the films
-            that fit, save the definition, and continue it whenever you want.
-          </p>
+          <div className="library-kicker">{t("playlist.kicker")}</div>
+          <h1 className="library-title">{t("playlist.title")}</h1>
+          <p className="playlists-sub">{t("playlist.sub")}</p>
         </div>
         <button type="button" className="btn btn-primary" onClick={newPlaylist}>
-          + New playlist
+          {t("playlist.new")}
         </button>
       </header>
 
       <div className="playlists-layout">
         <aside className="playlists-rail">
           <div className="playlists-rail__head">
-            <span>Saved playlists</span>
+            <span>{t("playlist.saved")}</span>
             <span>{playlists.length}</span>
           </div>
           {loadingList ? (
@@ -332,13 +833,13 @@ export default function PlaylistsPage({
           ) : playlists.length === 0 ? (
             <div className="playlist-rail-empty">
               <PlaylistIcon />
-              <p>Nothing saved yet. Build one for tonight.</p>
+              <p>{t("playlist.nothing")}</p>
             </div>
           ) : (
             <div className="playlist-rail-list">
-              {playlists.map((playlist) => (
+              {orderedPlaylists.map((playlist) => (
+                <div key={playlist.id} className="playlist-rail-row">
                 <button
-                  key={playlist.id}
                   type="button"
                   className={`playlist-rail-item${
                     activeId === playlist.id ? " is-active" : ""
@@ -346,9 +847,9 @@ export default function PlaylistsPage({
                   onClick={() => openPlaylist(playlist)}
                 >
                   <span className="playlist-rail-item__poster">
-                    {playlist.posterPath ? (
+                    {playlistCover(playlist) ? (
                       <img
-                        src={imgUrl(playlist.posterPath, "w185")}
+                        src={imgUrl(playlistCover(playlist), "w185")}
                         alt=""
                         loading="lazy"
                       />
@@ -361,9 +862,7 @@ export default function PlaylistsPage({
                       {playlist.name}
                     </span>
                     <span className="playlist-rail-item__meta">
-                      {momentById(playlist.moment).label} ·{" "}
-                      {playlist.genre || "Mixed"} · {playlist.itemCount || 0}{" "}
-                      films
+                      {playlistMetaLine(playlist, t)}
                     </span>
                     {playlist.tags?.length > 0 && (
                       <span className="playlist-rail-item__tags">
@@ -372,34 +871,109 @@ export default function PlaylistsPage({
                     )}
                   </span>
                 </button>
+                <button
+                  type="button"
+                  className={`playlist-rail-star${
+                    favoritePlaylistIds.has(playlist.id) ? " is-favorite" : ""
+                  }`}
+                  onClick={() => toggleFavoritePlaylist(playlist.id)}
+                  aria-label={
+                    favoritePlaylistIds.has(playlist.id)
+                      ? t("playlist.unfavorite")
+                      : t("playlist.favorite")
+                  }
+                  title={
+                    favoritePlaylistIds.has(playlist.id)
+                      ? t("playlist.unfavorite")
+                      : t("playlist.favorite")
+                  }
+                >
+                  {favoritePlaylistIds.has(playlist.id) ? "♥" : "♡"}
+                </button>
+                </div>
               ))}
             </div>
           )}
         </aside>
 
         <main className="playlists-main">
+          {activeId && selectedItems.length > 0 && (
+            <section className="playlist-actionbar" aria-label={t("playlist.actions")}>
+              <div className="playlist-actionbar__progress">
+                <div className="playlist-actionbar__progress-copy">
+                  <b>{t("playlist.progress", { done: watchedCount, total: selectedItems.length })}</b>
+                  <span>{t("playlist.progressHint")}</span>
+                </div>
+                <div
+                  className="playlist-actionbar__bar"
+                  role="progressbar"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={watchedPercent}
+                >
+                  <span style={{ width: `${watchedPercent}%` }} />
+                </div>
+              </div>
+              <div className="playlist-actionbar__buttons">
+                <button type="button" className="btn btn-primary" onClick={playAll}>
+                  ▶ {t("playlist.actionPlayAll")}
+                </button>
+                <button type="button" className="btn btn-ghost" onClick={shufflePlay}>
+                  ⤨ {t("playlist.actionShuffle")}
+                </button>
+                {firstUnwatched && (
+                  <button type="button" className="btn btn-ghost" onClick={continuePlaylist}>
+                    {t("playlist.actionContinue")}
+                  </button>
+                )}
+                <button type="button" className="btn btn-ghost" onClick={exportCurrent}>
+                  {t("playlist.actionExport")}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => importRef.current?.click()}
+                >
+                  {t("playlist.actionImport")}
+                </button>
+              </div>
+            </section>
+          )}
+          {isPersonPlaylist(activePlaylist) ? (
+            <PersonPlaylistView
+              playlist={activePlaylist}
+              items={selectedItems}
+              onSelect={onSelect}
+              onOpenProfile={onOpenPerson}
+              onDelete={deleteCurrent}
+            />
+          ) : (
+            <>
           <section className="playlist-studio">
             <div className="playlist-studio__head">
               <div>
                 <div className="playlist-studio__eyebrow">
-                  {activeId ? "Continue playlist" : "New playlist"}
+                  {activeId
+                    ? t("playlist.continue")
+                    : t("playlist.newEyebrow")}
                 </div>
                 <h2 className="playlist-studio__title">
-                  {draft.name || "What are you in the mood for?"}
+                  {draft.name || t("playlist.whatMood")}
                 </h2>
                 <p className="playlist-studio__sub">
-                  Pick a moment, a genre and as many loose terms as you like.
-                  Then choose the films that belong in this playlist.
+                  {t("playlist.studioSub")}
                 </p>
               </div>
               <span className="playlist-studio__badge">
-                {selected.size} film{selected.size === 1 ? "" : "s"}
+                {selected.size === 1
+                  ? t("playlist.filmOne")
+                  : t("playlist.films", { n: selected.size })}
               </span>
             </div>
 
             <div className="playlist-form">
               <label className="playlist-field playlist-field--name">
-                <span>Playlist name</span>
+                <span>{t("playlist.name")}</span>
                 <input
                   className="playlist-input"
                   value={draft.name}
@@ -409,12 +983,49 @@ export default function PlaylistsPage({
                       name: event.target.value,
                     }))
                   }
-                  placeholder={autoName(draft)}
+                  placeholder={autoName(draft, t)}
                 />
               </label>
 
               <div className="playlist-field">
-                <span className="playlist-label">When are you watching?</span>
+                <span className="playlist-label">{t("playlist.type")}</span>
+                <div className="playlist-moments playlist-moments--types">
+                  {[
+                    { id: "movie", key: "playlist.typeMovie" },
+                    { id: "tv", key: "playlist.typeTV" },
+                    { id: "anime", key: "playlist.typeAnime" },
+                  ].map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      className={`playlist-moment${
+                        draft.type === option.id ? " is-active" : ""
+                      }`}
+                      onClick={() =>
+                        setDraft((previous) => ({
+                          ...previous,
+                          type: option.id,
+                        }))
+                      }
+                      aria-pressed={draft.type === option.id}
+                    >
+                      <span className="playlist-moment__short">
+                        {option.id === "movie"
+                          ? t("playlist.typeFilm")
+                          : option.id === "tv"
+                            ? t("playlist.typeTv")
+                            : t("playlist.typeAnime")}
+                      </span>
+                      <span className="playlist-moment__label">
+                        {t(option.key)}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="playlist-field">
+                <span className="playlist-label">{t("playlist.moment")}</span>
                 <div className="playlist-moments">
                   {PLAYLIST_MOMENTS.map((moment) => (
                     <button
@@ -432,13 +1043,13 @@ export default function PlaylistsPage({
                       aria-pressed={draft.moment === moment.id}
                     >
                       <span className="playlist-moment__short">
-                        {moment.short}
+                        {t(`playlist.moment.${moment.id}.short`)}
                       </span>
                       <span className="playlist-moment__label">
-                        {moment.label}
+                        {t(`playlist.moment.${moment.id}.label`)}
                       </span>
                       <span className="playlist-moment__hint">
-                        {moment.hint}
+                        {t(`playlist.moment.${moment.id}.hint`)}
                       </span>
                     </button>
                   ))}
@@ -447,7 +1058,7 @@ export default function PlaylistsPage({
 
               <div className="playlist-form__row">
                 <label className="playlist-field">
-                  <span>Genre</span>
+                  <span>{t("playlist.genre")}</span>
                   <select
                     className="playlist-select"
                     value={draft.genre}
@@ -458,17 +1069,17 @@ export default function PlaylistsPage({
                       }))
                     }
                   >
-                    <option value="">Mixed genres</option>
+                    <option value="">{t("playlist.mixedGenres")}</option>
                     {PLAYLIST_GENRES.map((genre) => (
                       <option key={genre.id} value={genre.name}>
-                        {genre.name}
+                        {t(`genre.${genre.id}`) || genre.name}
                       </option>
                     ))}
                   </select>
                 </label>
 
                 <label className="playlist-field">
-                  <span>Subcategory or mood</span>
+                  <span>{t("playlist.subgenre")}</span>
                   <input
                     className="playlist-input"
                     value={draft.subgenre}
@@ -478,14 +1089,14 @@ export default function PlaylistsPage({
                         subgenre: event.target.value,
                       }))
                     }
-                    placeholder="slow-burn space horror, cozy mystery…"
+                    placeholder={t("playlist.subgenrePlaceholder")}
                   />
                 </label>
               </div>
 
               <ChipInput
-                label="Terms that define it"
-                placeholder="space, heist, practical effects…"
+                label={t("playlist.terms")}
+                placeholder={t("playlist.termsPlaceholder")}
                 values={draft.terms}
                 onChange={(terms) =>
                   setDraft((previous) => ({ ...previous, terms }))
@@ -501,18 +1112,18 @@ export default function PlaylistsPage({
                   disabled={loading}
                 >
                   <SearchIcon />
-                  {loading ? "Finding films…" : "Find films"}
+                  {loading ? t("playlist.finding") : t("playlist.find")}
                 </button>
                 <button
                   type="button"
                   className="btn btn-ghost"
                   onClick={() => setDraft(emptyDraft())}
                 >
-                  Reset mood
+                  {t("playlist.reset")}
                 </button>
                 {!apiKey && (
                   <span className="playlist-error">
-                    TMDB key needed in Settings.
+                    {t("playlist.keyNeeded")}
                   </span>
                 )}
               </div>
@@ -526,13 +1137,13 @@ export default function PlaylistsPage({
             <section className="playlist-results" ref={resultsRef}>
               <div className="playlist-results__head">
                 <div>
-                  <h3>Films for this moment</h3>
+                  <h3>{t("playlist.filmsForMoment")}</h3>
                   <p>
                     {loading
-                      ? "Reading the mood…"
+                      ? t("playlist.readingMood")
                       : results.length > 0
-                        ? `${results.length} candidates. Add only the ones you want.`
-                        : "Describe a moment and find candidates."}
+                        ? t("playlist.candidates", { n: results.length })
+                        : t("playlist.describe")}
                   </p>
                 </div>
                 {results.length > 0 && (
@@ -542,7 +1153,7 @@ export default function PlaylistsPage({
                     onClick={generate}
                     disabled={loading}
                   >
-                    Refresh
+                    {t("playlist.refresh")}
                   </button>
                 )}
               </div>
@@ -576,37 +1187,76 @@ export default function PlaylistsPage({
                   <div className="playlist-empty__icon">
                     <PlaylistIcon />
                   </div>
-                  <h4>No list yet</h4>
-                  <p>
-                    Choose a moment, a genre or a few terms. The list will keep
-                    its reasoning, and you can keep only the films that fit.
-                  </p>
+                  <h4>{t("playlist.noList")}</h4>
+                  <p>{t("playlist.noListBody")}</p>
                 </div>
               )}
             </section>
 
             <aside className="playlist-picks">
               <div className="playlist-picks__head">
-                <span>In this playlist</span>
+                <span>{t("playlist.inPlaylist")}</span>
                 <b>{selected.size}</b>
               </div>
+              {selectedItems.length > 1 && (
+                <div className="playlist-picks__sort">
+                  <button type="button" onClick={() => sortSelectedBy("year")}>
+                    {t("playlist.sortYear")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => sortSelectedBy("rating")}
+                  >
+                    {t("playlist.sortRating")}
+                  </button>
+                </div>
+              )}
               <div className="playlist-picks__list">
                 {selectedItems.length === 0 ? (
                   <p className="playlist-picks__empty">
-                    Add films from the list. They will stay here when you save
-                    and come back.
+                    {t("playlist.picksEmpty")}
                   </p>
                 ) : (
                   selectedItems.map((item) => (
                     <div
-                      className="playlist-pick-row"
+                      className={`playlist-pick-row${
+                        dragKey === getWatchKey(item) ? " is-dragging" : ""
+                      }${
+                        dragOverKey === getWatchKey(item) ? " is-drop-target" : ""
+                      }`}
                       key={`${item.media_type}_${item.id}`}
+                      draggable
+                      onDragStart={(event) => {
+                        const key = getWatchKey(item);
+                        setDragKey(key);
+                        event.dataTransfer.effectAllowed = "move";
+                        event.dataTransfer.setData("text/plain", key);
+                      }}
+                      onDragOver={(event) => {
+                        event.preventDefault();
+                        setDragOverKey(getWatchKey(item));
+                      }}
+                      onDragLeave={() => setDragOverKey(null)}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        const key =
+                          event.dataTransfer.getData("text/plain") || dragKey;
+                        moveSelectedTo(key, getWatchKey(item));
+                        setDragKey(null);
+                        setDragOverKey(null);
+                      }}
+                      onDragEnd={() => {
+                        setDragKey(null);
+                        setDragOverKey(null);
+                      }}
                     >
                       <button
                         type="button"
                         className="playlist-pick-row__poster"
                         onClick={() => onSelect?.(item)}
-                        aria-label={`Open ${item.title || item.name}`}
+                        aria-label={t("playlist.openTitle", {
+                          title: item.title || item.name,
+                        })}
                       >
                         {item.poster_path ? (
                           <img
@@ -623,16 +1273,56 @@ export default function PlaylistsPage({
                           {item.title || item.name}
                         </div>
                         <div className="playlist-pick-row__meta">
-                          {yearOf(item) || "—"} · Movie
+                          {yearOf(item) || "—"} ·{" "}
+                          {item.media_type === "tv" ? t("person.series") : t("person.movie")}
                         </div>
                       </div>
                       <button
                         type="button"
                         className="playlist-pick-row__remove"
                         onClick={() => toggleItem(item)}
-                        aria-label={`Remove ${item.title || item.name}`}
+                        aria-label={t("playlist.removeTitle", {
+                          title: item.title || item.name,
+                        })}
                       >
                         ×
+                      </button>
+                      <div className="playlist-pick-row__order">
+                        <button
+                          type="button"
+                          onClick={() => moveSelected(getWatchKey(item), -1)}
+                          aria-label={t("playlist.moveUp")}
+                          title={t("playlist.moveUp")}
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => moveSelected(getWatchKey(item), 1)}
+                          aria-label={t("playlist.moveDown")}
+                          title={t("playlist.moveDown")}
+                        >
+                          ↓
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        className={`playlist-pick-row__watched${
+                          isItemWatched(item, watched, progress) ? " is-watched" : ""
+                        }`}
+                        onClick={() => toggleWatched(item)}
+                        aria-label={
+                          isItemWatched(item, watched, progress)
+                            ? t("playlist.markUnwatched")
+                            : t("playlist.markWatched")
+                        }
+                        title={
+                          isItemWatched(item, watched, progress)
+                            ? t("playlist.markUnwatched")
+                            : t("playlist.markWatched")
+                        }
+                      >
+                        ✓
                       </button>
                     </div>
                   ))
@@ -646,20 +1336,20 @@ export default function PlaylistsPage({
                   disabled={saving}
                 >
                   {saving
-                    ? "Saving…"
+                    ? t("playlist.saving")
                     : activeId
-                      ? "Save changes"
+                      ? t("playlist.saveChanges")
                       : selected.size > 0
-                        ? "Save playlist"
-                        : "Save definition"}
+                        ? t("playlist.savePlaylist")
+                        : t("playlist.saveDefinition")}
                 </button>
                 {selected.size > 0 && (
                   <button
                     type="button"
                     className="btn btn-ghost"
-                    onClick={openFirst}
+                    onClick={playAll}
                   >
-                    Open first
+                    {t("playlist.openFirst")}
                   </button>
                 )}
                 {activeId && (
@@ -668,14 +1358,51 @@ export default function PlaylistsPage({
                     className="btn btn-danger"
                     onClick={deleteCurrent}
                   >
-                    Delete
+                    {t("playlist.delete")}
                   </button>
                 )}
               </div>
             </aside>
           </div>
+            </>
+          )}
         </main>
       </div>
+
+      {deleteTarget && (
+        <div className="playlist-confirm-backdrop" role="presentation">
+          <div
+            className="playlist-confirm"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="playlist-confirm-title"
+          >
+            <h3 id="playlist-confirm-title">{t("playlist.confirmTitle")}</h3>
+            <p>{t("playlist.confirmBody", { name: deleteTarget.name })}</p>
+            <div className="playlist-confirm__actions">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => setDeleteTarget(null)}
+              >
+                {t("playlist.cancel")}
+              </button>
+              <button type="button" className="btn btn-danger" onClick={confirmDelete}>
+                {t("playlist.confirmDelete")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {undoDelete && (
+        <div className="playlist-undo" role="status">
+          <span>{t("playlist.deletedNotice")}</span>
+          <button type="button" className="btn btn-ghost" onClick={undoRemove}>
+            {t("playlist.undo")}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

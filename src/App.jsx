@@ -75,6 +75,7 @@ export default function App() {
   const [apiKeyStatus, setApiKeyStatus] = useState("checking"); // 'checking' | 'ok' | 'invalid_token' | 'unreachable'
   const [page, setPage] = useState(() => storage.get("startPage") || "home");
   const [selected, setSelected] = useState(null);
+  const [playQueue, setPlayQueue] = useState(null);
   const [showSearch, setShowSearch] = useState(false);
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [dlSearchOpen, setDlSearchOpen] = useState(false);
@@ -114,6 +115,12 @@ export default function App() {
   const [progress, setProgress] = useState(() => storage.get("progress") || {});
   const [history, setHistory] = useState(() => storage.get("history") || []);
   const [watched, setWatched] = useState(() => storage.get("watched") || {});
+  const [favoritePeople, setFavoritePeople] = useState(
+    () => {
+      const saved = storage.get("favoritePeople");
+      return Array.isArray(saved) ? saved : [];
+    },
+  );
   const [toast, setToast] = useState(null);
   const [organizing, setOrganizing] = useState(false);
   const [organizeProgress, setOrganizeProgress] = useState(null);
@@ -877,6 +884,14 @@ export default function App() {
     [navigate],
   );
 
+  // Opens the Playlists page focused on a playlist saved from a person page.
+  const openSavedPlaylist = useCallback(
+    (playlistId) => {
+      navigate("playlists", playlistId ? { playlistId } : null);
+    },
+    [navigate],
+  );
+
   // Loads a franchise as a playlist: the library page filters on the saved
   // saga collection and shows every part in release order by default.
   const openPlaylist = useCallback(
@@ -915,7 +930,11 @@ export default function App() {
       }
       if (e.key === "?" && !e.ctrlKey && !e.metaKey) {
         const tag = (e.target?.tagName || "").toUpperCase();
-        if (tag !== "INPUT" && tag !== "TEXTAREA") {
+        if (
+          tag !== "INPUT" &&
+          tag !== "TEXTAREA" &&
+          !document.querySelector(".player-deck, .player-deck-handle-wrap")
+        ) {
           e.preventDefault();
           setShowShortcuts((v) => !v);
         }
@@ -960,7 +979,7 @@ export default function App() {
       gamepadToastedRef.current = true;
       // showToast is defined further below in this component; effects only
       // run after the full render, so it's already initialized by then.
-      showToast("Controller connected");
+      showToast(t("app.toast.controllerConnected"));
     }
     if (!gamepadConnected) gamepadToastedRef.current = false;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -984,10 +1003,37 @@ export default function App() {
 
   const handleSelectResult = useCallback(
     (item) => {
+      setPlayQueue(null);
       navigate(item.media_type === "tv" ? "tv" : "movie", item);
     },
     [navigate],
   );
+
+  const startPlaylistQueue = useCallback(
+    (items, startIndex = 0) => {
+      const queue = (items || []).filter(Boolean);
+      if (queue.length === 0) return;
+      const index = Math.min(Math.max(0, startIndex), queue.length - 1);
+      const item = queue[index];
+      setPlayQueue({ items: queue, index });
+      navigate(item.media_type === "tv" ? "tv" : "movie", item);
+    },
+    [navigate],
+  );
+
+  const playNextInQueue = useCallback(() => {
+    if (!playQueue) return false;
+    const next = playQueue.index + 1;
+    if (next >= playQueue.items.length) {
+      setPlayQueue(null);
+      showToast(t("playlist.queueFinished"));
+      return false;
+    }
+    const item = playQueue.items[next];
+    setPlayQueue({ ...playQueue, index: next });
+    navigate(item.media_type === "tv" ? "tv" : "movie", item);
+    return true;
+  }, [navigate, playQueue, showToast, t]);
 
   const saveApiKey = useCallback((key) => {
     secureStorage.set("apikey", key);
@@ -1079,12 +1125,12 @@ export default function App() {
       const removed = wl.toggle(item, patch);
 
       if (removed) {
-        showToast(`Removed “${entry?.title || item.title || item.name}”`, {
-          label: "Undo",
+        showToast(t("app.toast.removedTitle", { title: entry?.title || item.title || item.name }), {
+          label: t("app.undo"),
           onClick: () => watchlistRef.current.restore(entry, index),
         });
       } else {
-        showToast(`Added “${item.title || item.name}” to watchlist`);
+        showToast(t("app.toast.addedWatchlist", { title: item.title || item.name }));
         enrichWatchlistEntry(item);
       }
     },
@@ -1130,14 +1176,14 @@ export default function App() {
       }
 
       if (added.length === 0) {
-        showToast("Already in your library");
+        showToast(t("app.toast.alreadyInLibrary"));
         return [];
       }
 
       showToast(
         options.saga
-          ? `Added ${added.length} titles to “${options.saga.name}”`
-          : `Added ${added.length} title${added.length === 1 ? "" : "s"} to your library`,
+          ? t("app.toast.addedTitles", { n: added.length, name: options.saga.name })
+          : t("app.toast.addedTitlesLibrary", { n: added.length }),
       );
       // Fire-and-forget: the TMDB queue caps concurrency, and each entry gets
       // its director / franchise / decade tags when the details arrive.
@@ -1151,7 +1197,7 @@ export default function App() {
     if (!apiKey || organizing) return;
     const entries = Object.values(watchlistRef.current.items || {});
     if (entries.length === 0) {
-      showToast("Nothing to organize yet");
+      showToast(t("app.toast.nothingToOrganize"));
       return;
     }
 
@@ -1173,23 +1219,19 @@ export default function App() {
 
       if (result.patches.length === 0) {
         if (result.failed > 0 && result.failed === result.scanned) {
-          showToast("Could not reach TMDB to organize the library");
+          showToast(t("app.toast.cannotReachTmdb"));
         } else {
           showToast(
             result.scanned === 0
-              ? "Every title is already categorized"
-              : "Scanned titles are already in the right place",
+              ? t("app.toast.alreadyCategorized")
+              : t("app.toast.scannedOk"),
           );
         }
       } else {
-        showToast(
-          `Organized ${result.patches.length} title${
-            result.patches.length === 1 ? "" : "s"
-          }`,
-        );
+        showToast(t("app.toast.organizedTitles", { n: result.patches.length }));
       }
     } catch {
-      showToast("Could not organize the library");
+      showToast(t("app.toast.organizeFailed"));
     } finally {
       setOrganizing(false);
       setOrganizeProgress(null);
@@ -1206,8 +1248,8 @@ export default function App() {
       if (!entry) return;
       const index = wl.order.indexOf(key);
       wl.remove(key);
-      showToast(`Removed “${entry.title}”`, {
-        label: "Undo",
+      showToast(t("app.toast.removedTitle", { title: entry.title }), {
+        label: t("app.undo"),
         onClick: () => watchlistRef.current.restore(entry, index),
       });
     },
@@ -1228,9 +1270,9 @@ export default function App() {
       if (snapshot.length === 0) return;
       wl.removeMany(snapshot.map((item) => item.key));
       showToast(
-        `Removed ${snapshot.length} title${snapshot.length === 1 ? "" : "s"}`,
+        t("app.toast.removedTitles", { n: snapshot.length }),
         {
-          label: "Undo",
+          label: t("app.undo"),
           onClick: () =>
             snapshot.forEach(({ entry, index }) =>
               watchlistRef.current.restore(entry, index),
@@ -1245,6 +1287,74 @@ export default function App() {
     const key = getWatchKey(item);
     return !!(key && watchlistRef.current.items[key]);
   }, []);
+
+  const isFavorite = useCallback((item) => {
+    const key = getWatchKey(item);
+    return !!watchlistRef.current.items[key]?.favorite;
+  }, []);
+
+  const toggleFavorite = useCallback(
+    (item) => {
+      const key = getWatchKey(item);
+      if (!key) return;
+      const entry = watchlistRef.current.items[key];
+      if (!entry) {
+        const saved = watchlistRef.current.add(item, { favorite: true });
+        if (saved)
+          showToast(t("toast.favoriteAdded", { title: saved.title }));
+        return;
+      }
+      const next = !entry.favorite;
+      watchlistRef.current.update(key, { favorite: next });
+      showToast(
+        t(next ? "toast.favoriteAdded" : "toast.favoriteRemoved", {
+          title: entry.title,
+        }),
+      );
+    },
+    [showToast, t],
+  );
+
+  const isFavoritePerson = useCallback(
+    (personId) =>
+      favoritePeople.some(
+        (person) => Number(person.id) === Number(personId),
+      ),
+    [favoritePeople],
+  );
+
+  const toggleFavoritePerson = useCallback(
+    (person) => {
+      if (!person?.id) return;
+      setFavoritePeople((current) => {
+        const exists = current.some(
+          (item) => Number(item.id) === Number(person.id),
+        );
+        const next = exists
+          ? current.filter((item) => Number(item.id) !== Number(person.id))
+          : [
+              {
+                id: person.id,
+                name: person.name || "",
+                profile_path: person.profile_path || null,
+                known_for_department: person.known_for_department || "",
+              },
+              ...current,
+            ];
+        storage.set("favoritePeople", next);
+        return next;
+      });
+      showToast(
+        t(
+          isFavoritePerson(person.id)
+            ? "toast.favoritePersonRemoved"
+            : "toast.favoritePersonAdded",
+          { name: person.name || "" },
+        ),
+      );
+    },
+    [isFavoritePerson, showToast, t],
+  );
 
   const bulkUpdateSaved = useCallback((keys, patch) => {
     watchlistRef.current.updateMany(keys, patch);
@@ -1447,6 +1557,11 @@ export default function App() {
                 savedEntries={savedEntries}
                 isSaved={isSaved}
                 onToggleSave={toggleSave}
+                isFavorite={isFavorite}
+                onToggleFavorite={toggleFavorite}
+                favoritePeople={favoritePeople}
+                onOpenPerson={openPerson}
+                onOpenTag={(tag) => navigate("history", { tag })}
               />
             )}
             {page === "movie" && selected && (
@@ -1479,6 +1594,7 @@ export default function App() {
                 onAddSaga={addItemsSmart}
                 onOpenPlaylist={openPlaylist}
                 onOpenPerson={openPerson}
+                onPlayNext={playQueue ? playNextInQueue : null}
               />
             )}
             {page === "tv" && selected && (
@@ -1510,6 +1626,7 @@ export default function App() {
                 isSavedItem={isSaved}
                 onToggleSaveItem={toggleSave}
                 onOpenPerson={openPerson}
+                onPlayNext={playQueue ? playNextInQueue : null}
               />
             )}
             {page === "history" && (
@@ -1531,8 +1648,11 @@ export default function App() {
                 onReorder={watchlist.reorder}
                 apiKey={apiKey}
                 focusCollection={selected?.collection || null}
+                focusTag={selected?.tag || null}
                 isSaved={isSaved}
                 onToggleSave={toggleSave}
+                isFavorite={isFavorite}
+                onToggleFavorite={toggleFavorite}
                 onAddMany={addItemsSmart}
                 onOrganize={organizeLibrary}
                 organizing={organizing}
@@ -1546,6 +1666,13 @@ export default function App() {
                 taste={taste}
                 watchlist={watchlist.state}
                 onSelect={handleSelectResult}
+                onPlayQueue={startPlaylistQueue}
+                watched={watched}
+                progress={progress}
+                onMarkWatched={markWatched}
+                onMarkUnwatched={markUnwatched}
+                initialPlaylistId={selected?.playlistId || null}
+                onOpenPerson={openPerson}
               />
             )}
             {page === "person" && selected && (
@@ -1556,6 +1683,9 @@ export default function App() {
                 onSelect={handleSelectResult}
                 isSaved={isSaved}
                 onToggleSave={toggleSave}
+                onOpenSavedPlaylist={openSavedPlaylist}
+                isFavoritePerson={isFavoritePerson}
+                onToggleFavoritePerson={toggleFavoritePerson}
               />
             )}
             {page === "settings" && (

@@ -102,7 +102,6 @@ export const VIBE_GROUPS = [
   },
 ];
 
-const groupById = new Map(VIBE_GROUPS.map((group) => [group.id, group]));
 const groupByTag = new Map();
 for (const group of VIBE_GROUPS) {
   for (const tag of group.tags) groupByTag.set(tag, group);

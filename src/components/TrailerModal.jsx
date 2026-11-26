@@ -168,16 +168,16 @@ export default function TrailerModal({ trailerKey, title, onClose }) {
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <button
               onClick={openInBrowser}
-              title="Open in browser"
+              title={tr("trailer.openInBrowser")}
               className="trailer-openbrowser-btn"
             >
               <ExternalLinkIcon size={13} />
-              Open in Browser
+              {tr("trailer.openInBrowser")}
             </button>
             <button
               className="trailer-close-btn"
               onClick={onClose}
-              title="Close"
+              title={tr("trailer.close")}
             >
               <CloseIcon />
             </button>

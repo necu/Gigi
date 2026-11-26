@@ -1,14 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
+import { PlaylistIcon } from "../components/Icons";
 import { imgUrl, tmdbFetch } from "../utils/api";
 import {
   PERSON_FILTERS,
   creditLabel,
   creditMeta,
   creditYear,
-  departmentLabel,
+  departmentKey,
   isKnownFor,
   normalizePersonCredits,
 } from "../utils/people";
+import { usePlaylists } from "../utils/usePlaylists";
+import { useT } from "../utils/i18n";
 
 function PersonCreditCard({
   credit,
@@ -17,9 +20,12 @@ function PersonCreditCard({
   saved = false,
   onToggleSave,
 }) {
-  const title = creditLabel(credit) || "Untitled";
+  const t = useT();
+  const title = creditLabel(credit) || t("person.untitled");
   const roles = credit.roles?.filter(Boolean) || [];
-  const roleLabel = roles.slice(0, 3).join(" · ") || "Crew";
+  const roleLabel = roles.slice(0, 3).join(" · ") || t("person.crew");
+  const typeLabel =
+    credit.media_type === "tv" ? t("person.series") : t("person.movie");
 
   return (
     <div className={`person-credit${knownFor ? " person-credit--known" : ""}`}>
@@ -40,10 +46,14 @@ function PersonCreditCard({
           ) : (
             <span className="person-credit__placeholder">🎞</span>
           )}
-          {knownFor && <span className="person-credit__known">Known for</span>}
+          {knownFor && (
+            <span className="person-credit__known">{t("person.knownTag")}</span>
+          )}
         </div>
         <div className="person-credit__title">{title}</div>
-        <div className="person-credit__meta">{creditMeta(credit)}</div>
+        <div className="person-credit__meta">
+          {creditMeta(credit, typeLabel)}
+        </div>
         <div className="person-credit__role" title={roleLabel}>
           {roleLabel}
         </div>
@@ -53,11 +63,13 @@ function PersonCreditCard({
           type="button"
           className={`person-credit__save${saved ? " is-saved" : ""}`}
           onClick={() => onToggleSave(credit)}
-          title={saved ? "Remove from library" : "Add to library"}
+          title={
+            saved ? t("person.removeFromLibrary") : t("person.addToLibrary")
+          }
           aria-label={
             saved
-              ? `Remove ${title} from library`
-              : `Add ${title} to library`
+              ? t("person.removeTitle", { title })
+              : t("person.addTitle", { title })
           }
         >
           {saved ? "✓" : "+"}
@@ -74,12 +86,20 @@ export default function PersonPage({
   onSelect,
   isSaved,
   onToggleSave,
+  onOpenSavedPlaylist,
+  isFavoritePerson,
+  onToggleFavoritePerson,
 }) {
+  const t = useT();
+  const { playlists, save } = usePlaylists();
   const [details, setDetails] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [filter, setFilter] = useState("all");
   const [showFullBio, setShowFullBio] = useState(false);
+  const [savingPlaylist, setSavingPlaylist] = useState(false);
+  const [playlistNotice, setPlaylistNotice] = useState(null);
+  const [playlistError, setPlaylistError] = useState(null);
 
   const personId = person?.id;
 
@@ -89,9 +109,11 @@ export default function PersonPage({
     setError(null);
     setFilter("all");
     setShowFullBio(false);
+    setPlaylistNotice(null);
+    setPlaylistError(null);
     if (!personId || !apiKey) {
       setLoading(false);
-      if (!apiKey) setError("Add a TMDB API key to load this filmography.");
+      if (!apiKey) setError(t("person.apiKeyError"));
       return () => {
         mounted = false;
       };
@@ -106,7 +128,7 @@ export default function PersonPage({
         if (mounted) setDetails(data || null);
       })
       .catch(() => {
-        if (mounted) setError("Could not load this person from TMDB.");
+        if (mounted) setError(t("person.loadError"));
       })
       .finally(() => {
         if (mounted) setLoading(false);
@@ -115,7 +137,15 @@ export default function PersonPage({
     return () => {
       mounted = false;
     };
+    // The error strings follow the current language; refetching on language
+    // changes is unnecessary, so `t` stays out of the dependency list.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [personId, apiKey]);
+
+  useEffect(() => {
+    setPlaylistNotice(null);
+    setPlaylistError(null);
+  }, [filter]);
 
   const profile = details || person || {};
   const credits = useMemo(() => normalizePersonCredits(details), [details]);
@@ -123,21 +153,40 @@ export default function PersonPage({
     () =>
       PERSON_FILTERS.map((item) => ({
         ...item,
+        label: t(`person.filter.${item.id}`),
         count:
           item.id === "all"
             ? credits.length
             : credits.filter((credit) => credit.categories.includes(item.id))
                 .length,
       })).filter((item) => item.id === "all" || item.count > 0),
-    [credits],
+    [credits, t],
   );
-  const visibleCredits = useMemo(
-    () =>
+  // A filmography reads best as a career timeline: oldest release first, and
+  // undated projects at the end. Sort at render time so imported or legacy
+  // playlists cannot show decades out of order.
+  const visibleCredits = useMemo(() => {
+    const filtered =
       filter === "all"
         ? credits
-        : credits.filter((credit) => credit.categories.includes(filter)),
-    [credits, filter],
-  );
+        : credits.filter((credit) => credit.categories.includes(filter));
+    return [...filtered].sort((a, b) => {
+      const dateA = a.release_date || a.first_air_date || "";
+      const dateB = b.release_date || b.first_air_date || "";
+      if (!dateA && !dateB) return a.title.localeCompare(b.title);
+      if (!dateA) return 1;
+      if (!dateB) return -1;
+      return dateA.localeCompare(dateB) || a.title.localeCompare(b.title);
+    });
+  }, [credits, filter]);
+  const activeFilterLabel =
+    filter === "all"
+      ? ""
+      : filters.find((item) => item.id === filter)?.label || filter;
+  const creditCount = (count) =>
+    count === 1 ? t("person.creditOne") : t("person.credits", { n: count });
+  // The visible list is already in release order; the playlist stores it as-is.
+  const playlistCredits = visibleCredits;
   const knownFor = useMemo(
     () =>
       credits
@@ -154,22 +203,82 @@ export default function PersonPage({
     () => credits.map(creditYear).filter(Boolean).sort((a, b) => a - b),
     [credits],
   );
-  const name = profile.name || person?.name || "Person";
-  const department = departmentLabel(
-    profile.known_for_department || person?.known_for_department,
-  );
+  const name = profile.name || person?.name || t("person.person");
+  const rawDepartment =
+    profile.known_for_department || person?.known_for_department || "";
+  const department = departmentKey(rawDepartment)
+    ? t(`person.dept.${departmentKey(rawDepartment)}`)
+    : rawDepartment || t("person.dept.fallback");
   const meta = [
     department,
     profile.birthday
-      ? `Born ${profile.birthday}${profile.deathday ? ` · died ${profile.deathday}` : ""}`
+      ? `${t("person.born", { date: profile.birthday })}${
+          profile.deathday
+            ? ` · ${t("person.died", { date: profile.deathday })}`
+            : ""
+        }`
       : null,
     profile.place_of_birth || null,
   ].filter(Boolean);
 
+  const saveFilmography = async () => {
+    if (!playlistCredits.length || savingPlaylist) return;
+    setSavingPlaylist(true);
+    setPlaylistError(null);
+    setPlaylistNotice(null);
+    try {
+      const personKey = profile.id || personId;
+      const existing = playlists.find(
+        (playlist) =>
+          playlist.kind === "person" &&
+          playlist.meta?.personId === personKey &&
+          (playlist.meta?.filterId || "all") === filter,
+      );
+      const years = playlistCredits.map(creditYear).filter(Boolean);
+      const playlistName = `${name} — ${
+        activeFilterLabel || t("person.filmography")
+      }`;
+      const saved = await save({
+        id: existing?.id,
+        name: playlistName,
+        kind: "person",
+        meta: {
+          personId: personKey,
+          personName: name,
+          profilePath: profile.profile_path || null,
+          department,
+          filterId: filter,
+          filterLabel: activeFilterLabel,
+          yearStart: years[0] || null,
+          yearEnd: years[years.length - 1] || null,
+        },
+        moment: "any",
+        genre: "",
+        subgenre: "",
+        terms: [],
+        tags: [
+          rawDepartment ? department : null,
+          t("person.releaseOrder"),
+        ].filter(Boolean),
+        items: playlistCredits,
+      });
+      setPlaylistNotice({
+        id: saved?.id || existing?.id || null,
+        name: saved?.name || playlistName,
+        count: playlistCredits.length,
+        updated: Boolean(existing),
+      });
+    } catch {
+      setPlaylistError(t("person.saveError"));
+    } finally {
+      setSavingPlaylist(false);
+    }
+  };
+
   return (
     <div className="fade-in person-page">
       <button type="button" className="btn btn-ghost person-back" onClick={onBack}>
-        ← Back
+        ← {t("person.back")}
       </button>
 
       <div className="person-hero">
@@ -186,13 +295,31 @@ export default function PersonPage({
         </div>
 
         <div className="person-intro">
-          <div className="library-kicker">People</div>
+          <div className="library-kicker">{t("person.people")}</div>
           <h1 className="person-name">{name}</h1>
           <div className="person-meta">{meta.join(" · ")}</div>
 
+          {onToggleFavoritePerson && (
+            <button
+              type="button"
+              className={`btn person-favorite${
+                isFavoritePerson?.(profile.id || personId) ? " is-favorite" : ""
+              }`}
+              onClick={() => onToggleFavoritePerson(profile)}
+            >
+              {isFavoritePerson?.(profile.id || personId) ? "♥" : "♡"}{" "}
+              {isFavoritePerson?.(profile.id || personId)
+                ? t("person.unfollow")
+                : t("person.follow")}
+            </button>
+          )}
+
           <div className="person-stats">
             <span>
-              <b>{credits.length}</b> credits
+              <b>{credits.length}</b>{" "}
+              {credits.length === 1
+                ? t("person.creditWord")
+                : t("person.creditWords")}
             </span>
             {years.length > 0 && (
               <span>
@@ -201,13 +328,16 @@ export default function PersonPage({
             )}
             {profile.popularity != null && (
               <span>
-                <b>{Math.round(profile.popularity)}</b> popularity
+                <b>{Math.round(profile.popularity)}</b>{" "}
+                {t("person.popularity")}
               </span>
             )}
           </div>
 
           {loading ? (
-            <div className="person-bio person-bio--loading">Loading biography…</div>
+            <div className="person-bio person-bio--loading">
+              {t("person.loadingBio")}
+            </div>
           ) : error ? (
             <div className="person-error">{error}</div>
           ) : (
@@ -215,7 +345,7 @@ export default function PersonPage({
               <p
                 className={`person-bio${showFullBio ? " person-bio--full" : ""}`}
               >
-                {profile.biography || "No biography available for this person yet."}
+                {profile.biography || t("person.noBio")}
               </p>
               {profile.biography?.length > 420 && (
                 <button
@@ -223,7 +353,7 @@ export default function PersonPage({
                   className="btn btn-ghost person-bio-toggle"
                   onClick={() => setShowFullBio((value) => !value)}
                 >
-                  {showFullBio ? "Show less" : "Read more"}
+                  {showFullBio ? t("person.showLess") : t("person.readMore")}
                 </button>
               )}
             </div>
@@ -235,9 +365,9 @@ export default function PersonPage({
         <section className="person-section">
           <div className="person-section__head">
             <div>
-              <div className="section-title">Known for</div>
+              <div className="section-title">{t("person.knownFor")}</div>
               <div className="person-section__sub">
-                The work people usually recognise {name} from.
+                {t("person.knownForSub", { name })}
               </div>
             </div>
           </div>
@@ -259,19 +389,69 @@ export default function PersonPage({
       <section className="person-section">
         <div className="person-section__head">
           <div>
-            <div className="section-title">Filmography</div>
+            <div className="section-title">{t("person.filmography")}</div>
             <div className="person-section__sub">
-              {visibleCredits.length} credit
-              {visibleCredits.length === 1 ? "" : "s"}
-              {filter !== "all"
-                ? ` · ${filters.find((item) => item.id === filter)?.label || filter}`
-                : ""}
+              {creditCount(visibleCredits.length)}
+              {filter !== "all" ? ` · ${activeFilterLabel}` : ""}
             </div>
+          </div>
+          <div className="person-filmography-actions">
+            <button
+              type="button"
+              className="btn btn-primary person-save-playlist"
+              onClick={saveFilmography}
+              disabled={savingPlaylist || playlistCredits.length === 0}
+              title={
+                filter === "all"
+                  ? t("person.saveTitleAll")
+                  : t("person.saveTitleFilter", { label: activeFilterLabel })
+              }
+            >
+              <PlaylistIcon />
+              {savingPlaylist
+                ? t("person.saving")
+                : filter === "all"
+                  ? t("person.saveFilmography")
+                  : t("person.saveFilter", { label: activeFilterLabel })}
+            </button>
           </div>
         </div>
 
+        {playlistNotice && (
+          <div className="person-playlist-notice" role="status">
+            <span>
+              {t(
+                playlistNotice.count === 1
+                  ? "person.playlistSavedOne"
+                  : "person.playlistSaved",
+                {
+                  action: playlistNotice.updated
+                    ? t("person.updated")
+                    : t("person.saved"),
+                  name: playlistNotice.name,
+                  n: playlistNotice.count,
+                },
+              )}
+            </span>
+            {onOpenSavedPlaylist && playlistNotice.id && (
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => onOpenSavedPlaylist(playlistNotice.id)}
+              >
+                {t("person.openPlaylist")}
+              </button>
+            )}
+          </div>
+        )}
+        {playlistError && <div className="person-error">{playlistError}</div>}
+
         {filters.length > 2 && (
-          <div className="person-filters" role="tablist" aria-label="Credit type">
+          <div
+            className="person-filters"
+            role="tablist"
+            aria-label={t("person.filterAria")}
+          >
             {filters.map((item) => (
               <button
                 key={item.id}
@@ -311,7 +491,7 @@ export default function PersonPage({
             ))}
           </div>
         ) : (
-          <div className="person-empty">No credits in this category.</div>
+          <div className="person-empty">{t("person.empty")}</div>
         )}
       </section>
     </div>

@@ -59,7 +59,7 @@ export function loadPlayerPreferences() {
 export function savePlayerPreferences(patch) {
   const next = normalizePlayerPreferences({
     ...loadPlayerPreferences(),
-    ...(patch || {}),
+    ...patch,
   });
   storage.set(PLAYER_PREFS_KEY, next);
   if (typeof window !== "undefined") {

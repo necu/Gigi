@@ -15,6 +15,14 @@ import {
   saveSeriesIntroEnd,
 } from "../utils/playerPreferences";
 import { useT } from "../utils/i18n";
+import {
+  BoltIcon,
+  FullscreenIcon,
+  PipIcon,
+  RetryIcon,
+  SleepIcon,
+  VolumeIcon,
+} from "./Icons";
 
 const HOLD_STEP_MIN_MS = 100;
 const INTRO_UNDO_MS = 5000;
@@ -85,8 +93,13 @@ export default function PlayerDeck({
   isSeries = false,
   onSettings,
   onSession,
+  onNext = null,
+  nextLabel = "",
+  nextTitle = "",
+  onRetry = null,
   pageFullscreen = false,
   onToggleFullscreen = null,
+  onPip = null,
 }) {
   const t = useT();
   const [prefs, setPrefs] = useState(loadPlayerPreferences);
@@ -110,6 +123,12 @@ export default function PlayerDeck({
   const [fullscreen, setFullscreen] = useState(false);
   const [boostLevel, setBoostLevel] = useState(1);
   const [boostAvailable, setBoostAvailable] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [subtitleDelay, setSubtitleDelay] = useState(0);
+  const [sleepEndsAt, setSleepEndsAt] = useState(0);
+  const [sleepLeft, setSleepLeft] = useState(0);
+  const [tracksOpen, setTracksOpen] = useState(false);
+  const [waitingLong, setWaitingLong] = useState(false);
   const isFullscreen = fullscreen || pageFullscreen;
   const showRemaining = prefs.timeDisplay === "remaining";
 
@@ -135,6 +154,17 @@ export default function PlayerDeck({
   const volumeSyncedRef = useRef("");
   const boostSyncedRef = useRef("");
   const learnKey = seriesKey || introKey;
+  // An episode key must win over the series key: two episodes of the same
+  // series can share a duration, and the saved volume/boost still has to be
+  // re-applied to the second one.
+  const syncKey = `${introKey || learnKey || title || "title"}:${Math.round(video.duration || 0)}`;
+
+  useEffect(() => {
+    setWaitingLong(false);
+    if (!active || pipOpen || video.found) return undefined;
+    const timer = setTimeout(() => setWaitingLong(true), 12000);
+    return () => clearTimeout(timer);
+  }, [active, pipOpen, video.found]);
 
   useEffect(() => {
     setPrefs(loadPlayerPreferences());
@@ -241,6 +271,29 @@ export default function PlayerDeck({
     },
     [fallbackAction, getWebContentsId],
   );
+
+  useEffect(() => {
+    if (!sleepEndsAt) {
+      setSleepLeft(0);
+      return undefined;
+    }
+    let cancelled = false;
+    const tick = () => {
+      const left = Math.max(0, Math.ceil((sleepEndsAt - Date.now()) / 1000));
+      if (cancelled) return;
+      setSleepLeft(left);
+      if (left <= 0) {
+        setSleepEndsAt(0);
+        control("pause");
+      }
+    };
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [control, sleepEndsAt]);
 
   // Fallback poll. The event bridge below is the primary source; this slow
   // tick only recovers if a provider replaces its video and drops listeners.
@@ -522,31 +575,6 @@ export default function PlayerDeck({
     revealControls();
   }, [control, revealControls]);
 
-  // Host-side Space fallback: when focus is on the deck or anywhere outside
-  // the guest page, Space still toggles playback.
-  useEffect(() => {
-    if (!active || pipOpen) return undefined;
-    const handler = (event) => {
-      if (event.code !== "Space" || event.repeat) return;
-      const tag = (event.target?.tagName || "").toUpperCase();
-      if (
-        tag === "INPUT" ||
-        tag === "TEXTAREA" ||
-        tag === "SELECT" ||
-        tag === "BUTTON" ||
-        tag === "A" ||
-        event.target?.isContentEditable ||
-        event.target?.closest?.("button, a, [role='button']")
-      ) {
-        return;
-      }
-      event.preventDefault();
-      togglePlay();
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [active, pipOpen, togglePlay]);
-
   const seekOnce = useCallback(
     async (direction, stepOverride = null) => {
       const step = stepOverride ?? prefs.seekStep;
@@ -658,7 +686,7 @@ export default function PlayerDeck({
       muted: false,
     }));
     setPrefs(savePlayerPreferences({ volume: value, muted: false }));
-    volumeSyncedRef.current = String(Math.round(video.duration || 0));
+    volumeSyncedRef.current = syncKey;
     const next = await control("set-volume", value);
     if (next?.found) setVideo((current) => ({ ...current, ...next }));
     revealControls();
@@ -669,7 +697,7 @@ export default function PlayerDeck({
   // quieter than the user left it.
   useEffect(() => {
     if (!video.found) return;
-    const key = String(Math.round(video.duration || 0));
+    const key = syncKey;
     if (!key || key === "0" || volumeSyncedRef.current === key) return;
     volumeSyncedRef.current = key;
     if (prefs.muted) {
@@ -686,7 +714,7 @@ export default function PlayerDeck({
     control("set-volume", target).then((next) => {
       if (next?.found) setVideo((current) => ({ ...current, ...next }));
     });
-  }, [video.found, video.duration, video.muted, video.volume, prefs.volume, prefs.muted, control]);
+  }, [video.found, syncKey, video.muted, video.volume, prefs.volume, prefs.muted, control]);
 
   const toggleTimeDisplay = () => {
     const next = showRemaining ? "total" : "remaining";
@@ -710,7 +738,7 @@ export default function PlayerDeck({
   // hidden, and it is what makes quiet dialogue usable.
   useEffect(() => {
     if (!active || !video.found) return;
-    const key = String(Math.round(video.duration || 0));
+    const key = syncKey;
     if (!key || key === "0" || boostSyncedRef.current === key) return;
     boostSyncedRef.current = key;
     // If the user already picked a boost in the deck, re-apply it. Otherwise
@@ -729,7 +757,7 @@ export default function PlayerDeck({
         setPrefs(savePlayerPreference("audioBoost", level));
       }
     });
-  }, [active, video.found, video.duration, prefs.audioBoost, control]);
+  }, [active, video.found, syncKey, prefs.audioBoost, control]);
 
   const actualRate =
     Number(video.playbackRate) || Number(prefs.playbackRate) || 1;
@@ -739,8 +767,39 @@ export default function PlayerDeck({
     revealControls();
   };
 
+  const changeSubtitleDelay = async (delta) => {
+    const next = clamp(
+      Math.round((subtitleDelay + delta) * 2) / 2,
+      -10,
+      10,
+    );
+    setSubtitleDelay(next);
+    const result = await control("subtitle-delay", next);
+    if (result && result.supported === false) {
+      // The provider renders subtitles in its own DOM; keep the deck honest
+      // instead of pretending a delay was applied.
+      setSubtitleDelay(0);
+    }
+    revealControls();
+  };
+
+  const cycleSleepTimer = () => {
+    const options = [0, 30, 60, 90];
+    const minutesLeft = sleepEndsAt
+      ? Math.ceil((sleepEndsAt - Date.now()) / 60000)
+      : 0;
+    const nearest = options.reduce((best, option) =>
+      Math.abs(option - minutesLeft) < Math.abs(best - minutesLeft)
+        ? option
+        : best,
+    );
+    const next = options[(options.indexOf(nearest) + 1) % options.length];
+    setSleepEndsAt(next ? Date.now() + next * 60000 : 0);
+    revealControls();
+  };
+
   const cycleRate = async () => {
-    const rates = [1, 1.25, 1.5, 2];
+    const rates = [0.75, 1, 1.25, 1.5, 1.75, 2];
     const current = rates.reduce((best, rate) =>
       Math.abs(rate - actualRate) < Math.abs(best - actualRate) ? rate : best,
     );
@@ -754,6 +813,26 @@ export default function PlayerDeck({
     }
     revealControls();
   };
+
+  const stepRate = useCallback(
+    async (direction) => {
+      const current = Number(actualRate) || 1;
+      const next = clamp(
+        Math.round((current + direction * 0.25) * 100) / 100,
+        0.25,
+        4,
+      );
+      if (next === current) return;
+      setVideo((state) => ({ ...state, playbackRate: next }));
+      setPrefs(savePlayerPreference("playbackRate", next));
+      const result = await control("set-rate", next);
+      if (result?.found) {
+        setVideo((state) => ({ ...state, ...result }));
+      }
+      revealControls();
+    },
+    [actualRate, control, revealControls],
+  );
 
   const toggleFullscreen = useCallback(async () => {
     if (typeof onToggleFullscreen === "function") {
@@ -769,6 +848,101 @@ export default function PlayerDeck({
       }
     } catch {}
   }, [onToggleFullscreen, wrapRef]);
+
+  // Host-side shortcuts. They only run while the deck is mounted and never
+  // steal keys from inputs, buttons or editable fields. The guest page keeps
+  // its own shortcuts; this covers focus that sits outside the iframe.
+  useEffect(() => {
+    if (!active || pipOpen) return undefined;
+    const handler = (event) => {
+      const tag = (event.target?.tagName || "").toUpperCase();
+      const editing =
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        event.target?.isContentEditable;
+      if (editing) return;
+      if (event.defaultPrevented) return;
+      if (
+        tag === "BUTTON" ||
+        tag === "A" ||
+        event.target?.closest?.("button, a, [role='button']")
+      ) {
+        return;
+      }
+
+      if (event.key === "Escape" && helpOpen) {
+        event.preventDefault();
+        setHelpOpen(false);
+        return;
+      }
+      if (event.key === "?" || (event.shiftKey && event.code === "Slash")) {
+        event.preventDefault();
+        setHelpOpen((open) => !open);
+        revealControls();
+        return;
+      }
+      if (helpOpen) return;
+
+      if (event.code === "Space" || event.code === "KeyK") {
+        if (event.repeat) return;
+        event.preventDefault();
+        togglePlay();
+        return;
+      }
+      if (event.code === "ArrowLeft") {
+        event.preventDefault();
+        seekOnce(-1);
+        return;
+      }
+      if (event.code === "ArrowRight") {
+        event.preventDefault();
+        seekOnce(1);
+        return;
+      }
+      if (event.code === "KeyJ") {
+        event.preventDefault();
+        seekOnce(-1, 10);
+        return;
+      }
+      if (event.code === "KeyL") {
+        event.preventDefault();
+        seekOnce(1, 10);
+        return;
+      }
+      if (event.code === "KeyM") {
+        event.preventDefault();
+        toggleMute();
+        return;
+      }
+      if (event.code === "KeyF") {
+        event.preventDefault();
+        toggleFullscreen();
+        return;
+      }
+      if (event.shiftKey && event.code === "Comma") {
+        event.preventDefault();
+        stepRate(-1);
+        return;
+      }
+      if (event.shiftKey && event.code === "Period") {
+        event.preventDefault();
+        stepRate(1);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [
+    active,
+    helpOpen,
+    pipOpen,
+    revealControls,
+    seekOnce,
+    stepRate,
+    toggleFullscreen,
+    toggleMute,
+    togglePlay,
+  ]);
 
   // Live media bridge. The injected guard reports play/pause/seek/volume events
   // from every frame, so the label follows a click on the provider's own player
@@ -820,7 +994,7 @@ export default function PlayerDeck({
     active &&
     !pipOpen &&
     !video.menuOpen &&
-    (controlsVisible || !!introSegment || !!undo || !!seekBurst);
+    (controlsVisible || !!introSegment || !!undo || !!seekBurst || helpOpen || tracksOpen);
 
   if (!active || pipOpen) return null;
   if (!visible) {
@@ -931,7 +1105,7 @@ export default function PlayerDeck({
               title={video.muted ? t("player.unmute") : t("player.mute")}
               aria-label={video.muted ? t("player.unmute") : t("player.mute")}
             >
-              {video.muted || video.volume === 0 ? "🔇" : "🔊"}
+              <VolumeIcon muted={video.muted || video.volume === 0} />
             </button>
             <input
               type="range"
@@ -1018,12 +1192,43 @@ export default function PlayerDeck({
 
           <div className="player-deck__controls-side player-deck__controls-side--right">
             <span className="player-deck__state" aria-live="polite">
-              {video.found || video.readyState > 0
-                ? video.paused
-                  ? t("player.paused")
-                  : t("player.playing")
+              {waitingLong && !video.found
+                ? t("player.stalled")
+                : video.found || video.readyState > 0
+                  ? !video.paused && video.readyState < 3
+                    ? t("player.buffering")
+                    : video.paused
+                      ? t("player.paused")
+                      : t("player.playing")
                 : t("player.connecting")}
             </span>
+            {waitingLong && onRetry && (
+              <button
+                type="button"
+                className="player-deck__icon-btn player-deck__retry"
+                onClick={onRetry}
+                title={t("player.retry")}
+                aria-label={t("player.retry")}
+              >
+                <RetryIcon />
+              </button>
+            )}
+            {onNext && (
+              <button
+                type="button"
+                className="player-deck__next"
+                onClick={() => onNext()}
+                title={
+                  nextTitle ||
+                  (nextLabel
+                    ? `${t("player.nextEpisode")}: ${nextLabel}`
+                    : t("player.nextEpisode"))
+                }
+                aria-label={nextTitle || t("player.nextEpisode")}
+              >
+                {t("player.nextShort")} <span>→</span>
+              </button>
+            )}
             {boostAvailable && (
               <button
                 type="button"
@@ -1032,17 +1237,36 @@ export default function PlayerDeck({
                 title={`${t("player.boost")} · ${boostLevel > 1 ? `${boostLevel}×` : "1×"}`}
                 aria-label={`${t("player.boost")} ${boostLevel}×`}
               >
-                ⚡{boostLevel > 1 ? `${boostLevel}×` : ""}
+                <BoltIcon />
+                {boostLevel > 1 ? `${boostLevel}×` : ""}
               </button>
             )}
             <button
               type="button"
-              className="player-deck__icon-btn player-deck__tracks"
-              onClick={openProviderMenu}
+              className={`player-deck__icon-btn player-deck__tracks${tracksOpen ? " is-active" : ""}`}
+              onClick={() => setTracksOpen((open) => !open)}
               title={t("player.tracks")}
               aria-label={t("player.tracks")}
+              aria-expanded={tracksOpen}
             >
               CC
+            </button>
+            <button
+              type="button"
+              className="player-deck__icon-btn"
+              onClick={cycleSleepTimer}
+              title={
+                sleepLeft > 0
+                  ? t("player.sleepRemaining", { time: formatTime(sleepLeft) })
+                  : t("player.sleepTimer")
+              }
+              aria-label={
+                sleepLeft > 0
+                  ? t("player.sleepRemaining", { time: formatTime(sleepLeft) })
+                  : t("player.sleepTimer")
+              }
+            >
+              {sleepLeft > 0 ? formatTime(sleepLeft) : <SleepIcon />}
             </button>
             <button
               type="button"
@@ -1051,8 +1275,19 @@ export default function PlayerDeck({
               title={isFullscreen ? t("player.exitFullscreen") : t("player.fullscreen")}
               aria-label={isFullscreen ? t("player.exitFullscreen") : t("player.fullscreen")}
             >
-              {isFullscreen ? "⤢" : "⛶"}
+              <FullscreenIcon exit={isFullscreen} />
             </button>
+            {onPip && (
+              <button
+                type="button"
+                className="player-deck__icon-btn"
+                onClick={onPip}
+                title={t("player.pip")}
+                aria-label={t("player.pip")}
+              >
+                <PipIcon />
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -1115,6 +1350,62 @@ export default function PlayerDeck({
             </small>
           </span>
         </button>
+      )}
+
+      {tracksOpen && (
+        <div className="player-deck__tracks-menu" role="menu">
+          <button
+            type="button"
+            className="player-deck__tracks-item"
+            role="menuitem"
+            onClick={() => {
+              setTracksOpen(false);
+              openProviderMenu();
+            }}
+          >
+            <span>{t("player.providerTracks")}</span>
+            <small>{t("player.providerTracksHint")}</small>
+          </button>
+          <div className="player-deck__tracks-row">
+            <span>{t("player.subtitleDelay")}</span>
+            <div className="player-deck__tracks-stepper">
+              <button type="button" onClick={() => changeSubtitleDelay(-0.5)} aria-label="−0.5 s">
+                −
+              </button>
+              <b>{subtitleDelay > 0 ? "+" : ""}{subtitleDelay.toFixed(1)} s</b>
+              <button type="button" onClick={() => changeSubtitleDelay(0.5)} aria-label="+0.5 s">
+                +
+              </button>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="player-deck__tracks-reset"
+            onClick={() => changeSubtitleDelay(-subtitleDelay)}
+          >
+            {t("player.subtitleDelayReset")}
+          </button>
+        </div>
+      )}
+
+      {helpOpen && (
+        <div className="player-deck__help" role="dialog" aria-label={t("player.shortcuts")}>
+          <div className="player-deck__help-head">
+            <b>{t("player.shortcuts")}</b>
+            <button type="button" onClick={() => setHelpOpen(false)} aria-label={t("common.close")}>
+              ×
+            </button>
+          </div>
+          <dl>
+            <div><dt>Space / K</dt><dd>{t("player.shortcutPlayPause")}</dd></div>
+            <div><dt>← / →</dt><dd>{t("player.shortcutSeek")}</dd></div>
+            <div><dt>J / L</dt><dd>{t("player.shortcutSeekLong")}</dd></div>
+            <div><dt>M</dt><dd>{t("player.shortcutMute")}</dd></div>
+            <div><dt>F</dt><dd>{t("player.shortcutFullscreen")}</dd></div>
+            <div><dt>Shift + , / .</dt><dd>{t("player.shortcutSpeed")}</dd></div>
+            <div><dt>?</dt><dd>{t("player.shortcutHelp")}</dd></div>
+          </dl>
+        </div>
       )}
     </div>
   );

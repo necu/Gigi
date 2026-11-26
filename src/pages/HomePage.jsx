@@ -2,7 +2,7 @@ import { memo, useState, useEffect, useMemo, useCallback } from "react";
 import HomeSpotlight from "../components/HomeSpotlight";
 import MediaCard from "../components/MediaCard";
 import TrendingCarousel from "../components/TrendingCarousel";
-import { tmdbFetch } from "../utils/api";
+import { tmdbFetch, imgUrl } from "../utils/api";
 import { useRatings, getRatingForItem } from "../utils/useRatings";
 import { isRestricted } from "../utils/ageRating";
 import { useT } from "../utils/i18n";
@@ -78,6 +78,11 @@ function HomePage({
   savedEntries = [],
   isSaved,
   onToggleSave,
+  isFavorite,
+  onToggleFavorite,
+  favoritePeople = [],
+  onOpenPerson,
+  onOpenTag,
 }) {
   const t = useT();
   // The spotlight builds its own rotating list. This fallback only keeps the
@@ -131,6 +136,58 @@ function HomePage({
         .slice(0, 12),
     [savedEntries],
   );
+
+  const recentSource = useMemo(
+    () => getRecentHistoryItems(history, 1)[0] || null,
+    [history],
+  );
+  const recommendedSubtitle = recentSource
+    ? t("home.becauseWatchedSub", {
+        title: recentSource.title || recentSource.name || "",
+      })
+    : t("home.recommendedSub");
+
+  const favoriteItems = useMemo(
+    () =>
+      savedEntries
+        .filter((entry) => entry.favorite)
+        .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)),
+    [savedEntries],
+  );
+
+  // Titles already saved that were tagged with a person the user follows.
+  // Enrichment writes director names into tags, so this shelf needs no extra
+  // network request.
+  const favoritePeoplePicks = useMemo(() => {
+    const names = new Set(
+      (favoritePeople || []).map((person) => person?.name).filter(Boolean),
+    );
+    if (names.size === 0) return [];
+    return savedEntries
+      .filter((entry) =>
+        (entry.tags || []).some((tag) => names.has(tag)),
+      )
+      .slice(0, 12);
+  }, [favoritePeople, savedEntries]);
+
+  // Smart collections are derived from the tags enrichment already adds:
+  // genres, decades and directors. Only tags shared by two titles qualify, so
+  // the row does not turn into a random tag cloud.
+  const smartCollections = useMemo(() => {
+    const source = favoriteItems.length > 0 ? favoriteItems : savedEntries;
+    const counts = new Map();
+    for (const entry of source) {
+      for (const tag of entry.tags || []) {
+        if (!tag || tag.length > 28) continue;
+        counts.set(tag, (counts.get(tag) || 0) + 1);
+      }
+    }
+    return [...counts.entries()]
+      .filter(([, count]) => count >= 2)
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .slice(0, 8)
+      .map(([tag, count]) => ({ tag, count }));
+  }, [favoriteItems, savedEntries]);
 
   // All items for batch ratings fetch
   const allItems = useMemo(
@@ -471,18 +528,17 @@ function HomePage({
         >
           <div style={{ fontSize: 48 }}>📡</div>
           <div style={{ fontSize: 20, fontWeight: 600, color: "var(--text)" }}>
-            No internet connection
+            {t("home.offlineTitle")}
           </div>
           <div style={{ fontSize: 14, color: "var(--text3)" }}>
-            Trending and search require an internet connection. Your downloads
-            and library still work offline.
+            {t("home.offlineBody")}
           </div>
           <button
             className="btn btn-primary"
             style={{ marginTop: 8 }}
             onClick={onRetry}
           >
-            Retry
+            {t("app.apiRetry")}
           </button>
         </div>
       )}
@@ -536,6 +592,9 @@ function HomePage({
                       onMarkUnwatched={onMarkUnwatched}
                       ageRating={r.cert}
                       restricted={restr}
+                      isSaved={isSaved?.(item)}
+                      isFavorite={isFavorite?.(item)}
+                      onToggleFavorite={onToggleFavorite}
                     />
                   );
                 })}
@@ -586,6 +645,9 @@ function HomePage({
                       onMarkUnwatched={onMarkUnwatched}
                       ageRating={rd.cert}
                       restricted={rd.restricted}
+                      isSaved={isSaved?.(item)}
+                      isFavorite={isFavorite?.(item)}
+                      onToggleFavorite={onToggleFavorite}
                     />
                   );
                 })}
@@ -617,6 +679,122 @@ function HomePage({
           );
         }
 
+        if (id === "favorites") {
+          if (favoriteItems.length === 0) return null;
+          if (viewMode === "list")
+            return renderList(
+              "favorites",
+              t("home.favorites"),
+              null,
+              favoriteItems,
+              t("home.favoritesSub"),
+            );
+          return (
+            <TrendingCarousel
+              key="favorites"
+              storageKey="favorites"
+              items={favoriteItems}
+              title={t("home.favorites")}
+              subtitle={t("home.favoritesSub")}
+              onSelect={onSelect}
+              ratingsMap={enrichedRatingsMap}
+            />
+          );
+        }
+
+        if (id === "favoritePeople") {
+          if (favoritePeople.length === 0) return null;
+          return (
+            <div key="favoritePeople" className="section">
+              <div className="section-title">
+                {t("home.favoritePeople")}
+              </div>
+              <div className="section-subtitle">
+                {t("home.favoritePeopleSub")}
+              </div>
+              <div className="favorite-people-grid">
+                {favoritePeople.map((person) => (
+                  <button
+                    key={person.id}
+                    type="button"
+                    className="favorite-person-card"
+                    onClick={() => onOpenPerson?.(person)}
+                    title={person.name}
+                  >
+                    <span className="favorite-person-card__portrait">
+                      {person.profile_path ? (
+                        <img
+                          src={imgUrl(person.profile_path, "w185")}
+                          alt=""
+                          loading="lazy"
+                          decoding="async"
+                        />
+                      ) : (
+                        <span>{person.name?.[0] || "?"}</span>
+                      )}
+                    </span>
+                    <b>{person.name}</b>
+                    <small>
+                      {person.known_for_department ||
+                        t("person.dept.fallback")}
+                    </small>
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        }
+
+        if (id === "favoritePeoplePicks") {
+          if (favoritePeoplePicks.length === 0) return null;
+          if (viewMode === "list")
+            return renderList(
+              "favoritePeoplePicks",
+              t("home.favoritePeoplePicks"),
+              null,
+              favoritePeoplePicks,
+              t("home.favoritePeoplePicksSub"),
+            );
+          return (
+            <TrendingCarousel
+              key="favoritePeoplePicks"
+              storageKey="favoritePeoplePicks"
+              items={favoritePeoplePicks}
+              title={t("home.favoritePeoplePicks")}
+              subtitle={t("home.favoritePeoplePicksSub")}
+              onSelect={onSelect}
+              ratingsMap={enrichedRatingsMap}
+            />
+          );
+        }
+
+        if (id === "smartCollections") {
+          if (smartCollections.length === 0) return null;
+          return (
+            <div key="smartCollections" className="section">
+              <div className="section-title">
+                {t("home.smartCollections")}
+              </div>
+              <div className="section-subtitle">
+                {t("home.smartCollectionsSub")}
+              </div>
+              <div className="smart-collections">
+                {smartCollections.map(({ tag, count }) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    className="tag-chip"
+                    onClick={() => onOpenTag?.(tag)}
+                  >
+                    {tag}
+                    <span>{count}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        }
+
         if (id === "recommended") {
           if (filteredRecommendedItems.length === 0) return null;
           if (viewMode === "list")
@@ -625,7 +803,7 @@ function HomePage({
               t("home.recommended"),
               null,
               filteredRecommendedItems,
-              t("home.recommendedListSub"),
+              recommendedSubtitle,
             );
           return (
             <TrendingCarousel
@@ -633,7 +811,7 @@ function HomePage({
               storageKey="recommended"
               items={filteredRecommendedItems}
               title={t("home.recommended")}
-              subtitle={t("home.recommendedSub")}
+              subtitle={recommendedSubtitle}
               onSelect={onSelect}
               ratingsMap={enrichedRatingsMap}
             />

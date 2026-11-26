@@ -9,8 +9,9 @@ import {
 } from "../utils/searchBrain";
 import { searchDb } from "../utils/searchDb";
 import { getWatchKey } from "../utils/watchlist";
-import { departmentLabel } from "../utils/people";
+import { departmentKey } from "../utils/people";
 import useFocusTrap from "../utils/useFocusTrap";
+import { useT } from "../utils/i18n";
 
 const EMPTY_RECS = { items: [], loading: false, seedTitle: "" };
 
@@ -65,6 +66,7 @@ export default function SearchModal({
   const [boosts, setBoosts] = useState({});
   const [savedMap, setSavedMap] = useState({});
   const [highlight, setHighlight] = useState(0);
+  const t = useT();
 
   const dialogRef = useRef(null);
   const inputRef = useRef(null);
@@ -183,7 +185,7 @@ export default function SearchModal({
         if (requestId !== requestRef.current) return;
         setData({ results: [], best: null, person: null, parsed: null });
         setLoading(false);
-        setError("Search failed. Check your connection and try again.");
+        setError(t("search.failed"));
       }
     }, 320);
 
@@ -300,7 +302,7 @@ export default function SearchModal({
       className="modal-overlay"
       role="dialog"
       aria-modal="true"
-      aria-label="Search movies, series and people"
+      aria-label={t("search.aria")}
       tabIndex={-1}
       onClick={(event) => event.target === event.currentTarget && onClose()}
     >
@@ -311,18 +313,18 @@ export default function SearchModal({
             ref={inputRef}
             data-autofocus
             className="search-input"
-            placeholder="Search a title, a name, or “Dune 2021”…"
+            placeholder={t("search.placeholder")}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={handleKeyDown}
-            aria-label="Search movies, series and people"
+            aria-label={t("search.aria")}
             aria-autocomplete="list"
           />
           {query ? (
             <button
               className="btn btn-ghost btn-icon"
               onClick={() => setQuery("")}
-              aria-label="Clear search"
+              aria-label={t("search.clear")}
             >
               <CloseIcon />
             </button>
@@ -330,7 +332,7 @@ export default function SearchModal({
             <button
               className="btn btn-ghost btn-icon"
               onClick={onClose}
-              aria-label="Close search"
+              aria-label={t("search.close")}
             >
               <CloseIcon />
             </button>
@@ -342,15 +344,20 @@ export default function SearchModal({
         <div className="search-results" ref={resultsRef}>
           {offline && (
             <div className="search-offline">
-              🌐 No internet, search is unavailable offline.
+              🌐 {t("search.offline")}
             </div>
           )}
 
           <span className="sr-only" role="status">
             {loading
-              ? "Searching"
+              ? t("search.searching")
               : best
-                ? `${results.length} results`
+                ? t(
+                    results.length === 1
+                      ? "search.resultCount"
+                      : "search.resultCountPlural",
+                    { n: results.length },
+                  )
                 : ""}
           </span>
 
@@ -360,13 +367,13 @@ export default function SearchModal({
 
           {!loading && !error && query.trim() && !best && !data?.person && (
             <div className="search-empty">
-              No matches for “{query.trim()}”. Try fewer words or add a year.
+              {t("search.noMatches", { query: query.trim() })}
             </div>
           )}
 
           {best?._search?.suggestion && (
             <div className="search-correction">
-              <span>Closest match:</span>{" "}
+              <span>{t("search.closest")}</span>{" "}
               <button
                 type="button"
                 onClick={() => setQuery(best._search.suggestion)}
@@ -413,7 +420,7 @@ export default function SearchModal({
                   </div>
                   <div className="search-hero__info">
                     <div className="search-hero__kicker">
-                      Best match
+                      {t("search.best")}
                       {best._search?.match != null
                         ? ` · ${best._search.match}%`
                         : ""}
@@ -424,7 +431,9 @@ export default function SearchModal({
                     <div className="search-hero__meta">
                       {[
                         yearOf(best),
-                        best.media_type === "tv" ? "Series" : "Movie",
+                        best.media_type === "tv"
+                          ? t("search.series")
+                          : t("search.movie"),
                         best.vote_average
                           ? `★ ${Number(best.vote_average).toFixed(1)}`
                           : null,
@@ -451,7 +460,7 @@ export default function SearchModal({
                         handleOpen(best);
                       }}
                     >
-                      Open
+                      {t("search.open")}
                     </button>
                     <button
                       className={`btn ${
@@ -462,7 +471,9 @@ export default function SearchModal({
                         handleToggleSave(best);
                       }}
                     >
-                      {savedFor(best) ? "Saved" : "+ Library"}
+                      {savedFor(best)
+                        ? t("search.saved")
+                        : t("search.addLibrary")}
                     </button>
                   </div>
                 </div>
@@ -470,7 +481,9 @@ export default function SearchModal({
 
               {others.length > 0 && (
                 <div className="search-section">
-                  <div className="search-section__title">More matches</div>
+                  <div className="search-section__title">
+                    {t("search.more")}
+                  </div>
                   <div className="search-rows">
                     {others.map((item, index) => {
                       const saved = savedFor(item);
@@ -508,7 +521,9 @@ export default function SearchModal({
                             <div className="search-row__meta">
                               {[
                                 yearOf(item),
-                                item.media_type === "tv" ? "Series" : "Movie",
+                                item.media_type === "tv"
+                                  ? t("search.series")
+                                  : t("search.movie"),
                                 item.vote_average
                                   ? `★ ${Number(item.vote_average).toFixed(1)}`
                                   : null,
@@ -531,10 +546,14 @@ export default function SearchModal({
                               handleToggleSave(item);
                             }}
                             title={
-                              saved ? "Remove from library" : "Add to library"
+                              saved
+                                ? t("search.removeFromLibrary")
+                                : t("search.addToLibrary")
                             }
                             aria-label={
-                              saved ? "Remove from library" : "Add to library"
+                              saved
+                                ? t("search.removeFromLibrary")
+                                : t("search.addToLibrary")
                             }
                           >
                             {saved ? "✓" : "+"}
@@ -565,8 +584,8 @@ export default function SearchModal({
                 <div className="search-person__info">
                   <div className="search-person__kicker">
                     {data.person._match
-                      ? `Person match · ${data.person._match}%`
-                      : "Person"}
+                      ? t("search.personMatch", { n: data.person._match })
+                      : t("search.person")}
                   </div>
                   <div className="search-person__name">
                     {data.person.name}
@@ -574,10 +593,18 @@ export default function SearchModal({
                   <div className="search-person__meta">
                     {[
                       data.person.known_for_department
-                        ? departmentLabel(data.person.known_for_department)
+                        ? departmentKey(data.person.known_for_department)
+                          ? t(
+                              `person.dept.${departmentKey(
+                                data.person.known_for_department,
+                              )}`,
+                            )
+                          : data.person.known_for_department
                         : null,
                       data.person.known_for?.length
-                        ? `Known for ${data.person.known_for.join(", ")}`
+                        ? t("search.personKnownFor", {
+                            titles: data.person.known_for.join(", "),
+                          })
                         : null,
                     ]
                       .filter(Boolean)
@@ -585,7 +612,7 @@ export default function SearchModal({
                   </div>
                   {data.person._fuzzy < 0.98 && (
                     <div className="search-person__note">
-                      Interpreted as “{data.person.name}”
+                      {t("search.interpreted", { name: data.person.name })}
                     </div>
                   )}
                 </div>
@@ -595,7 +622,7 @@ export default function SearchModal({
                     className="btn btn-primary"
                     onClick={handleOpenPerson}
                   >
-                    Open profile
+                    {t("search.openProfile")}
                   </button>
                 </div>
               </div>
@@ -608,17 +635,17 @@ export default function SearchModal({
                   >
                     <div>
                       <div className="search-section__title">
-                        With {data.person.name}
+                        {t("search.with", { name: data.person.name })}
                       </div>
                       <div className="search-section__sub">
-                        Explore the filmography without leaving the search.
+                        {t("search.withSub")}
                       </div>
                     </div>
                     <button
                       className="btn btn-ghost"
                       onClick={() => handleSaveAll(personPicks)}
                     >
-                      Save all
+                      {t("search.saveAll")}
                     </button>
                   </div>
                   <div className="smart-strip">
@@ -643,12 +670,11 @@ export default function SearchModal({
                 <div>
                   <div className="search-section__title">
                     {recs.seedTitle
-                      ? `Because you're looking for ${recs.seedTitle}`
-                      : "You may also like"}
+                      ? t("search.because", { title: recs.seedTitle })
+                      : t("search.alsoLike")}
                   </div>
                   <div className="search-section__sub">
-                    Cast, directors, music, photography, themes and your own
-                    taste — not just “similar”.
+                    {t("search.recsSub")}
                   </div>
                 </div>
                 {recs.items.length > 0 && (
@@ -656,7 +682,7 @@ export default function SearchModal({
                     className="btn btn-ghost"
                     onClick={() => handleSaveAll(recs.items)}
                   >
-                    Save all
+                    {t("search.saveAll")}
                   </button>
                 )}
               </div>
@@ -693,12 +719,14 @@ export default function SearchModal({
           {showMemory && !loading && (
             <div className="search-history">
               <div className="search-history-header">
-                <span className="search-history-label">Search again</span>
+                <span className="search-history-label">
+                  {t("search.again")}
+                </span>
                 <button
                   className="search-history-clear"
                   onClick={clearMemory}
                 >
-                  Clear all
+                  {t("search.clearAll")}
                 </button>
               </div>
               {memory.map((entry) => (
@@ -712,7 +740,10 @@ export default function SearchModal({
                   </span>
                   <span className="search-history-term">{entry.query}</span>
                   {entry.bestTitle && (
-                    <span className="search-history-best" title="Best match">
+                    <span
+                      className="search-history-best"
+                      title={t("search.bestMatchTitle")}
+                    >
                       {entry.bestTitle}
                     </span>
                   )}
@@ -730,11 +761,10 @@ export default function SearchModal({
                 <SearchIcon />
               </div>
               <div className="search-hint__title">
-                Find a title. Get the whole universe.
+                {t("search.hintTitle")}
               </div>
               <p>
-                Type any part of a title, or a name. Results carry their own
-                recommendations and every card saves with one click.
+                {t("search.hintBody")}
               </p>
               <div className="search-suggestions">
                 {SEARCH_SUGGESTIONS.map((term) => (
@@ -755,17 +785,22 @@ export default function SearchModal({
         <div className="search-keybar" aria-hidden="true">
           <span className="search-keybar__group">
             <kbd>↑</kbd>
-            <kbd>↓</kbd> Navigate
+            <kbd>↓</kbd> {t("search.navigate")}
           </span>
           <span>
-            <kbd>Enter</kbd> Open
+            <kbd>Enter</kbd> {t("search.open")}
           </span>
           <span>
-            <kbd>Esc</kbd> Close
+            <kbd>Esc</kbd> {t("common.close")}
           </span>
           {results.length > 0 && (
             <span className="search-keybar__count">
-              {results.length} result{results.length === 1 ? "" : "s"}
+              {t(
+                results.length === 1
+                  ? "search.resultCount"
+                  : "search.resultCountPlural",
+                { n: results.length },
+              )}
             </span>
           )}
         </div>

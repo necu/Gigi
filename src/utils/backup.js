@@ -2,7 +2,7 @@
 // Single source of truth for which keys are included in backups.
 // Used by manual export/import (SettingsPage) and scheduled backups (App.jsx).
 
-import watchlistDb, { hasWatchlistDb } from "./watchlistDb";
+import watchlistDb, { hasWatchlistDb } from "./watchlistDb.js";
 
 const PREFIX = "streambert_";
 export const BACKUP_VERSION = 2;
@@ -20,6 +20,10 @@ export const BACKUP_KEYS = [
   "homeRowOrder",
   "homeRowVisible",
   "homeViewMode",
+  "spotlightMode",
+  "spotlightDismissed",
+  "favoritePeople",
+  "favoritePlaylists",
   "startPage",
   "libraryViews",
   // Player preferences
