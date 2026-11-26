@@ -44,6 +44,7 @@ The interface is dark by default, keyboard- and controller-friendly, and designe
 - **Player deck:** animated play, rewind and forward controls in the centre, a scrubbable timeline, speed, mute, fullscreen and a configurable hold-to-seek interval.
 - **Smarter skip intro:** a five-second halo appears on hover, auto-skips when complete, and leaves a five-second undo pill. AniSkip data is used when available, with a learned estimate for other series.
 - **Resume exactly where you were:** opening Settings from a playing title and pressing Back returns to the player at the same second, episode and pause state.
+- **Playback from every section:** opening a film, series or playlist title from Home, the Library or a saved playlist now loads its detail page and player correctly instead of failing with a blank error.
 - **Menus no longer pause the film:** closing a provider's quality or audio menu with an outside click restores playback instead of leaving it paused.
 - **Crisp Windows icon:** the app and the installer now carry a proper multi-resolution 32-bit icon, so Gigi stays sharp in the taskbar, Start menu and installer.
 - The existing Streambert data directory and local database names are unchanged, so updating does not wipe your library.
