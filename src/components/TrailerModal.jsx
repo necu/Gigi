@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { CloseIcon, ExternalLinkIcon } from "./Icons";
 import { storage } from "../utils/storage";
+import { translate as tr } from "../utils/i18n";
 
 export const DEFAULT_INVIDIOUS_BASE = "https://inv.nadeko.net";
 

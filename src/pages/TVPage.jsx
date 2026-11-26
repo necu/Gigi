@@ -84,7 +84,7 @@ import {
 } from "../utils/playerGamepadScript";
 import { useSourceId } from "../utils/useSourceId";
 import PlayerDeck from "../components/PlayerDeck";
-import { useT } from "../utils/i18n";
+import { translate as tr, useT } from "../utils/i18n";
 import { getIntroSkipMode } from "../utils/playerPreferences";
 import { setPlayerGamepadActive } from "../utils/gamepadPlayerState";
 import HiAnimeLoader from "../components/HiAnimeLoader";
